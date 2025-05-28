@@ -1,0 +1,463 @@
+# Overview
+*   **Task:** Provide a high-level overview of the product.
+*   **Details:**
+    *   **Product Name:** "AlgoTraderPy" (Placeholder Name)
+    *   **Problem Solved:** The product aims to automate the execution of options trading strategies for retail traders, reducing manual effort, enabling consistent application of strategy rules, and allowing traders to capitalize on opportunities without constant market monitoring. It specifically addresses the complexity of managing multi-leg option strategies like the Poor Man's Covered Call (PMCC).
+    *   **Target Audience:** Retail options traders who are technically proficient enough to set up and manage a trading bot, and who understand strategies like PMCC. They seek to automate their trading, implement sophisticated position sizing, and maintain control over strategy parameters.
+    *   **Unique Value Proposition:** AlgoTraderPy offers a Python-based, modular, and extensible options trading bot. Its key differentiators are:
+        1.  **Brokerage Agnosticism:** Designed with an abstraction layer for brokerage APIs, initially supporting Tradier but built to easily integrate others in the future.
+        2.  **Strategy Flexibility:** Allows for easy replacement or addition of trading strategies, starting with a configurable PMCC.
+        3.  **Advanced Position Sizing:** Implements Fractional Kelly (using Golden Ratio) for dynamic and risk-adjusted position sizing.
+        4.  **User-Controlled Automation:** Provides a user-friendly frontend to configure, monitor, and manage the bot's operations.
+
+# Core Features
+*   **Task:** List and describe the main features of the product.
+*   **Details:**
+
+    1.  **Modular Brokerage Integration:**
+        *   **What:** The bot interfaces with brokerage platforms via a well-defined abstraction layer. The initial implementation will support the Tradier API.
+        *   **Why:** Allows users to connect to their preferred broker (starting with Tradier) and enables future expansion to other brokerage APIs without overhauling the core trading logic. Provides resilience against changes in a single API.
+        *   **How:** An adapter pattern will be used. A generic `BrokerageInterface` will define methods for fetching market data (quotes, option chains), account information (balances, positions), and executing trades (placing, modifying, canceling orders). A concrete `TradierAdapter` class will implement this interface. API keys will be securely stored and managed.
+
+    2.  **Pluggable Trading Strategies:**
+        *   **What:** The bot supports different options trading strategies, which can be selected and configured by the user. The initial strategy implemented will be the Poor Man's Covered Call (PMCC).
+        *   **Why:** Caters to diverse trading preferences and allows the bot to evolve by incorporating new strategies over time. Users can switch strategies or experiment with different ones easily.
+        *   **How:** A `Strategy` base class or interface will define methods like `should_enter_trade()`, `determine_trade_parameters()`, `should_exit_trade()`, `manage_position()`. Concrete strategy classes like `PMCCStrategy` will implement this interface. The bot will dynamically load and use the selected strategy module.
+
+    3.  **Poor Man's Covered Call (PMCC) Strategy Engine:**
+        *   **What:** Implements the PMCC strategy with user-configurable parameters.
+        *   **Why:** PMCC is a popular strategy for generating income with limited capital. Automating it reduces manual effort and ensures consistent execution.
+        *   **How:**
+            *   **Long Call Leg Selection:** Identifies and purchases an In-The-Money (ITM) or At-The-Money (ATM) call option with a minimum of 3 months to expiry (configurable).
+            *   **Short Call Leg Selection:** Sells a shorter-dated (e.g., daily, weekly - initially daily) Out-of-The-Money (OTM) call option against the long call. The selection method for the short call's strike can be:
+                1.  **Delta-based:** Target a delta range (e.g., 20-30 delta, configurable).
+                2.  **Expected Move-based:** Use the underlying's expected move to select a strike outside this range (configurable).
+            *   **Management:** Periodically (e.g., daily) evaluate the short call leg for rolling or closing and re-selling based on market conditions and time decay.
+
+    4.  **Fractional Kelly Position Sizing (Golden Ratio):**
+        *   **What:** Implements the Fractional Kelly Criterion, using the Golden Ratio as the fraction, to determine the size of trades.
+        *   **Why:** Provides a mathematically sound approach to capital allocation, aiming to maximize long-term growth while managing risk. Using a fraction (Golden Ratio) makes it less aggressive than full Kelly.
+        *   **How:** A dedicated module will calculate the optimal fraction of capital to allocate to a trade based on user-defined inputs (e.g., win probability, win/loss ratio, or derived from strategy backtesting/assumptions). This will be integrated into the trade execution flow for the PMCC strategy.
+
+    5.  **Web-Based Frontend Interface:**
+        *   **What:** A user interface accessible via a web browser for managing and monitoring the bot.
+        *   **Why:** Provides a user-friendly way to interact with the bot, configure settings, and view performance, without needing direct code interaction for routine operations.
+        *   **How:** A web application with distinct pages for various functionalities (Login, Dashboard, Parameters, Option Chain, Trade History). Technology to be chosen for performance and security.
+
+    6.  **Automated Trade Execution:**
+        *   **What:** The bot automatically places, monitors, and potentially closes trades based on the selected strategy and market conditions.
+        *   **Why:** This is the core automation value, freeing the user from manual trade placement and management.
+        *   **How:** The trading engine, guided by the active strategy and position sizing modules, will construct order objects and send them to the brokerage via the brokerage adapter. It will also monitor open orders and existing positions.
+
+    7.  **Real-time Monitoring and Reporting:**
+        *   **What:** The frontend will display the bot's current status, active trades, historical performance, and relevant market data.
+        *   **Why:** Allows users to stay informed about the bot's activities and the performance of their strategies.
+        *   **How:** The dashboard will show key metrics. Trade history, pending orders, and current positions pages will provide detailed information. Option chain data will be loaded asynchronously.
+
+    8.  **User Authentication and Authorization:**
+        *   **What:** Secure login mechanism to protect access to the bot's interface and functionalities.
+        *   **Why:** Prevents unauthorized access to sensitive trading operations and brokerage credentials.
+        *   **How:** A standard username/password authentication system. Passwords will be hashed and salted. Session management will be implemented securely.
+
+# User Experience
+*   **Task:** Describe the intended user journey and overall experience.
+*   **Details:**
+
+    *   **User Personas:**
+        *   **Alex (Experienced Options Trader):**
+            *   **Goals:** Automate existing profitable strategies like PMCC, optimize position sizing, minimize time spent on execution, explore and potentially add custom strategies.
+            *   **Motivations:** Maximize returns, reduce emotional trading, leverage technology for efficiency. Comfortable with technical configurations.
+        *   **Sarah (Intermediate Options Trader):**
+            *   **Goals:** Utilize proven strategies like PMCC with clear guidance, understand bot operations, learn about automated trading, achieve consistent results.
+            *   **Motivations:** Grow capital steadily, avoid common pitfalls of manual trading, gain confidence in automated systems. Prefers a clear and intuitive interface.
+
+    *   **Key User Flows:**
+        1.  **First-Time Setup & Onboarding:**
+            *   User navigates to the bot's web interface.
+            *   User registers an account (if applicable, or uses pre-configured credentials for a local setup).
+            *   User logs in.
+            *   User navigates to a settings page to input their brokerage API key (e.g., Tradier). The system validates the key.
+            *   User navigates to the "Modify Bot Parameters" page to set up the initial PMCC strategy parameters and position sizing preferences.
+            *   User saves configuration.
+        2.  **Starting and Monitoring the Bot:**
+            *   User navigates to the Bot Dashboard.
+            *   User clicks a button to "Start Bot."
+            *   The dashboard displays the bot's status (e.g., "Running," "Idle," "Scanning").
+            *   The dashboard shows key metrics: active PMCC legs, current P&L (if available from broker), next scheduled actions.
+            *   User can view the "Trade Order History" page to see executed trades and "Current Positions" to see positions managed by the bot.
+        3.  **Modifying Bot Parameters:**
+            *   User navigates to the "Modify Bot Parameters" page.
+            *   User adjusts PMCC parameters (e.g., delta for short call, DTE for long call).
+            *   User changes position sizing settings.
+            *   User saves changes. The bot applies new parameters for subsequent trades/actions.
+        4.  **Viewing Option Chains:**
+            *   User navigates to the "Option Chain" page.
+            *   User enters an underlying symbol.
+            *   The page asynchronously loads and displays the option chain for the symbol from the configured brokerage.
+            *   User can filter by expiry, view greeks (Delta, Theta, Vega, Gamma), bid/ask prices. This is primarily for informational purposes or manual trade consideration.
+        5.  **Stopping the Bot:**
+            *   User navigates to the Bot Dashboard.
+            *   User clicks a button to "Stop Bot."
+            *   The bot completes any in-flight critical operations (e.g., order placement if already sent) and then ceases new trading activities. Existing positions remain unless the strategy dictates closure.
+
+    *   **UI/UX Considerations:**
+        *   **Technology Stack Recommendation:**
+            *   **Frontend:** React or Next.js.
+            *   **Styling:** Tailwind CSS.
+            *   **Component Library:** **shadcn/ui**.
+            *   **Justification:**
+                *   **React/Next.js:** Provides a robust framework for building dynamic and performant single-page applications (SPAs). Next.js offers benefits like server-side rendering (SSR) or static site generation (SSG) if needed for parts of the app, and a good development experience.
+                *   **Tailwind CSS:** A utility-first CSS framework that allows for rapid UI development and easy customization without writing custom CSS for everything.
+                *   **shadcn/ui:** Offers beautifully designed, accessible, and customizable components built on Radix UI and Tailwind CSS. Users "own" the component code, allowing deep customization. It is modern, well-regarded, and promotes a clean aesthetic suitable for a data-intensive application.
+                *   **Comparison with alternatives:**
+                    *   MUI/Ant Design: More comprehensive but can be heavier and more opinionated. shadcn/ui offers more direct control and a lighter feel.
+                    *   Chakra UI: Also excellent for accessibility and composition, but shadcn/ui's approach of providing copy-pasteable code is currently very popular and aligns well with agile development.
+        *   **General Principles:**
+            *   **Clarity & Readability:** Financial data must be presented clearly. Use appropriate fonts, spacing, and visual hierarchy.
+            *   **Responsiveness:** The UI should be usable on various screen sizes, primarily desktop/laptop where such tools are commonly used.
+            *   **Performance:** Option chain loading must be asynchronous and feel fast. Dashboard updates should be efficient.
+            *   **Security:** Standard web security practices (HTTPS, input validation, protection against XSS/CSRF) are essential.
+            *   **Feedback:** Provide immediate feedback for user actions (e.g., saving parameters, starting/stopping bot).
+            *   **Error Handling:** Clearly display errors (e.g., API connection issues, invalid parameters) with guidance if possible.
+            *   **Accessibility:** Adhere to WCAG guidelines where feasible, especially given shadcn/ui's foundation in Radix UI.
+
+# Technical Architecture
+*   **Task:** Outline the proposed technical implementation details.
+*   **Details:**
+
+    *   **System Components:**
+        1.  **Frontend (Web Application):**
+            *   Technology: React/Next.js with shadcn/ui and Tailwind CSS.
+            *   Responsibilities: User authentication, displaying dashboards, rendering option chains, managing bot configurations, and communicating with the Backend API.
+        2.  **Backend API (Python):**
+            *   Technology: FastAPI or Flask (FastAPI recommended for performance and automatic data validation/serialization with Pydantic).
+            *   Responsibilities: Exposing RESTful/WebSocket endpoints for frontend communication, handling user authentication, managing bot lifecycle (start/stop), persisting configurations, proxying requests to the trading engine.
+        3.  **Trading Engine Core (Python Module):**
+            *   Technology: Python.
+            *   Responsibilities: Implementing the core trading logic, strategy execution (PMCC), position sizing (Fractional Kelly), interaction with the Brokerage Adapter, decision making for trade entry/exit/management. Runs as a persistent process or scheduled tasks when the bot is active.
+        4.  **Brokerage Adapter (Python Module):**
+            *   Technology: Python.
+            *   Responsibilities: Implementing the `BrokerageInterface` for specific brokers (initially Tradier). Handles API authentication, data formatting, error handling for brokerage interactions.
+        5.  **Database:**
+            *   Technology: PostgreSQL (recommended for robustness and features) or SQLite (simpler for single-user local deployments).
+            *   Responsibilities: Storing user credentials (hashed passwords), bot configurations, strategy parameters, trade history, brokerage API keys (encrypted).
+        6.  **Task Scheduler (Optional but Recommended for PMCC daily actions):**
+            *   Technology: Celery with Redis/RabbitMQ as a message broker, or a simpler library like APScheduler if running as a single process.
+            *   Responsibilities: Scheduling periodic tasks like daily check/roll of short call options for PMCC, market data refreshes, or other background jobs.
+
+    *   **Data Models (Conceptual - to be refined):**
+        *   `User`:
+            *   `user_id` (PK)
+            *   `username` (UNIQUE)
+            *   `hashed_password`
+            *   `email` (Optional)
+        *   `BrokerageConnection`:
+            *   `connection_id` (PK)
+            *   `user_id` (FK)
+            *   `brokerage_name` (e.g., "Tradier")
+            *   `encrypted_api_key`
+            *   `account_id` (Optional, if user has multiple accounts)
+            *   `is_active`
+        *   `BotInstance`:
+            *   `bot_id` (PK)
+            *   `user_id` (FK)
+            *   `name` (e.g., "My PMCC Bot")
+            *   `strategy_id` (FK to `StrategyDefinition`)
+            *   `connection_id` (FK to `BrokerageConnection`)
+            *   `is_active` (boolean: bot on/off)
+            *   `current_status` (e.g., 'running', 'stopped', 'error')
+            *   `position_sizing_config` (JSON: e.g., { "method": "fractional_kelly_golden_ratio", "params": {...} })
+        *   `StrategyDefinition`: (Stores info about available strategies)
+            *   `strategy_id` (PK)
+            *   `strategy_name` (e.g., "PMCC")
+            *   `module_path` (path to the strategy implementation)
+        *   `StrategyParameters_PMCC`: (Example for PMCC, could be a JSON field in `BotInstance` or separate table)
+            *   `bot_id` (FK)
+            *   `long_call_min_expiry_days` (INT, e.g., 90)
+            *   `long_call_target_moneyness` (STRING: "ATM", "ITM_LEVEL_1") or `long_call_target_delta_range`
+            *   `short_call_dte` (INT, e.g., 0 for daily, 7 for weekly)
+            *   `short_call_selection_method` (ENUM: 'delta', 'expected_move')
+            *   `short_call_target_delta_min` (FLOAT, e.g., 0.20)
+            *   `short_call_target_delta_max` (FLOAT, e.g., 0.30)
+            *   `short_call_expected_move_factor` (FLOAT, e.g., 1.0)
+        *   `TradeOrder`:
+            *   `order_id` (PK, could be broker's ID)
+            *   `bot_id` (FK)
+            *   `timestamp_created`
+            *   `timestamp_filled` (Nullable)
+            *   `symbol` (e.g., underlying like "AAPL", or specific option contract)
+            *   `option_details` (JSON: strike, type, expiry for option trades)
+            *   `leg_type` (e.g., "PMCC_LONG_CALL", "PMCC_SHORT_CALL")
+            *   `action` (ENUM: 'BUY_TO_OPEN', 'SELL_TO_OPEN', 'BUY_TO_CLOSE', 'SELL_TO_CLOSE')
+            *   `quantity`
+            *   `order_type` (e.g., 'LIMIT', 'MARKET')
+            *   `limit_price` (Nullable)
+            *   `fill_price` (Nullable)
+            *   `status` (ENUM: 'PENDING', 'SUBMITTED', 'FILLED', 'CANCELLED', 'ERROR')
+            *   `broker_order_id`
+        *   `Position`:
+            *   `position_id` (PK)
+            *   `bot_id` (FK)
+            *   `option_contract_symbol` (UNIQUE for bot)
+            *   `underlying_symbol`
+            *   `quantity`
+            *   `average_entry_price`
+            *   `leg_type` (e.g., "PMCC_LONG_CALL", "PMCC_SHORT_CALL")
+            *   `entry_timestamp`
+            *   `current_market_value` (Cached, updated periodically)
+        *   `MarketDataCache_OptionChain`:
+            *   `underlying_symbol` (PK)
+            *   `option_chain_json`
+            *   `last_updated_timestamp`
+
+    *   **APIs and Integrations:**
+        1.  **Internal Backend API (RESTful):**
+            *   `POST /auth/login`: Authenticate user.
+            *   `POST /auth/register`: Register new user (if applicable).
+            *   `GET /bot/status`: Get current status of the bot.
+            *   `POST /bot/start`: Start the trading bot.
+            *   `POST /bot/stop`: Stop the trading bot.
+            *   `GET /bot/parameters`: Get current bot/strategy parameters.
+            *   `POST /bot/parameters`: Update bot/strategy parameters.
+            *   `GET /brokerage/connections`: List configured brokerage connections.
+            *   `POST /brokerage/connections`: Add new brokerage connection (store encrypted API key).
+            *   `GET /market/option-chain?symbol=<SYMBOL>`: Get option chain for a symbol (proxies to brokerage).
+            *   `GET /trading/orders`: Get list of historical/pending orders.
+            *   `GET /trading/positions`: Get current positions.
+        2.  **External Brokerage API (Tradier initially):**
+            *   Wrapper functions within `TradierAdapter` implementing `BrokerageInterface`:
+                *   `get_user_profile()`
+                *   `get_account_balance(account_id)`
+                *   `get_account_positions(account_id)`
+                *   `get_option_chain(underlying_symbol, expiration_date)`
+                *   `get_quotes(symbols_list)`
+                *   `place_option_order(account_id, symbol, option_symbol, side, quantity, type, duration, price, tag)`
+                *   `get_orders(account_id)`
+                *   `cancel_order(account_id, order_id)`
+            *   Data Exchange Format: Typically JSON.
+
+    *   **Infrastructure Requirements:**
+        *   **Development:** Local machine with Python, Node.js, chosen DB.
+        *   **Deployment (Single-User/Hobbyist):**
+            *   Can be run on a local machine or a small VPS (e.g., DigitalOcean Droplet, AWS EC2 t3.micro/small).
+            *   Python runtime environment.
+            *   Node.js runtime (for serving frontend if using Next.js SSR, or just for building static assets).
+            *   Web server for backend (e.g., Uvicorn with Gunicorn).
+            *   Database server (PostgreSQL or SQLite file).
+            *   Process manager (e.g., `systemd`, `supervisor`) to keep backend and trading engine running.
+        *   **Scalability Considerations (Future):** If evolving to a multi-tenant SaaS, would require robust cloud infrastructure (e.g., AWS/GCP/Azure), containerization (Docker/Kubernetes), managed databases, load balancers, and a more scalable task queue setup. For now, focus is on a single-user context.
+        *   **Security:** Network security (firewall rules if cloud-hosted), regular patching.
+
+# Development Roadmap
+*   **Task:** Break down the development process into logical phases based on scope. **No timelines or effort estimations.**
+*   **Details:**
+
+    *   **MVP (Minimum Viable Product) Requirements:**
+        1.  **Core Backend Setup:**
+            *   Basic FastAPI/Flask application structure.
+            *   User authentication (login endpoint, secure password storage).
+            *   Database setup (PostgreSQL/SQLite) with initial schema for Users, BrokerageConnections.
+            *   Secure storage and retrieval of encrypted Tradier API keys.
+        2.  **Tradier API Integration (Core Functionality):**
+            *   Implement `TradierAdapter` for:
+                *   Fetching option chains.
+                *   Placing single-leg option orders (Buy to Open, Sell to Open).
+                *   Getting current account positions.
+                *   Getting order status.
+        3.  **PMCC Strategy - Core Logic (Backend):**
+            *   Module for PMCC strategy.
+            *   Logic for selecting long call (ATM, >3 months expiry).
+            *   Logic for selecting short call (e.g., 20-30 delta, daily expiry - fixed method for MVP).
+            *   Logic for identifying a PMCC setup based on market data.
+        4.  **Fractional Kelly Position Sizing (Backend):**
+            *   Module for calculating position size based on Fractional Kelly (Golden Ratio) using placeholder/configurable inputs for win-rate/payout.
+            *   Integration with PMCC logic to determine trade quantity.
+        5.  **Basic Bot Control API:**
+            *   Endpoints to:
+                *   Set/get PMCC parameters (long call DTE, short call delta target initially).
+                *   Start/stop the PMCC trading logic (simple state machine: Idle -> Running -> Trade Execution -> Idle).
+        6.  **Minimalist Frontend (React/Next.js + shadcn/ui):**
+            *   Login Page.
+            *   Basic Bot Dashboard:
+                *   Display bot status (On/Off).
+                *   Button to Start/Stop bot.
+                *   Display currently configured core PMCC parameters.
+            *   Basic Trade Order History Page: Display list of trades placed by the bot (symbol, action, quantity, price, status).
+            *   Basic Current Positions Page: Display positions opened by the bot.
+        7.  **Basic Trading Execution Flow:**
+            *   When bot is started, it scans for PMCC opportunities based on its parameters.
+            *   If an opportunity is found and passes position sizing, it places the necessary orders (long call buy, short call sell).
+        8.  **Essential Logging:**
+            *   Log critical actions, decisions, errors, and trades to a file or console.
+
+    *   **Future Enhancements (Phase 2): Full PMCC & UI Enhancements:**
+        1.  **Full PMCC Parameterization (UI & Backend):**
+            *   Frontend "Modify Bot Parameter" page with UI elements for all PMCC parameters (long call min expiry, ATM/ITM selection; short call DTE, delta range, choice of delta vs. expected move).
+            *   Backend API to support all PMCC parameter configurations.
+        2.  **PMCC Short Call - Expected Move Logic:**
+            *   Implement expected move calculation.
+            *   Integrate expected move-based short call selection into PMCC strategy, selectable by user.
+        3.  **Interactive Option Chain Page (Frontend):**
+            *   Dedicated page to asynchronously load and display option chains from Tradier.
+            *   Filters for expiry, strike range. Display greeks.
+        4.  **Enhanced Bot Dashboard (Frontend):**
+            *   Display more detailed status (e.g., "Scanning for long call," "Managing short call for XYZ").
+            *   Key performance indicators (e.g., P&L of current positions if feasible from API).
+        5.  **PMCC Short Call Management (Backend):**
+            *   Logic for daily (or other frequency) monitoring of the short call leg.
+            *   Automated rolling or closing/re-selling of the short call based on pre-defined rules (e.g., delta changes, time to expiry, profit targets).
+            *   Task scheduler integration (APScheduler or Celery) for timely execution of short call management.
+        6.  **Formal Brokerage API Abstraction Layer:**
+            *   Refine `BrokerageInterface` and ensure `TradierAdapter` strictly adheres to it.
+            *   Develop a mock brokerage adapter for easier testing.
+        7.  **Refined Error Handling & Notifications (Basic):**
+            *   Improved error display in the UI.
+            *   Basic system-level notifications for critical failures (e.g., repeated API errors).
+
+    *   **Future Enhancements (Phase 3): Extensibility & Advanced Features:**
+        1.  **Pluggable Strategy Framework:**
+            *   Design and implement a formal system for adding new trading strategies beyond PMCC.
+            *   Allow users to select from a list of available strategies in the UI.
+            *   Define a clear interface/plugin architecture for strategy modules.
+        2.  **Support for Additional Brokerage API(s):**
+            *   Implement a second `BrokerageAdapter` (e.g., for Interactive Brokers, Alpaca) to prove the abstraction layer.
+            *   UI to select and configure different brokerage connections.
+        3.  **Advanced Analytics and Reporting:**
+            *   Portfolio performance over time (charts).
+            *   Strategy-specific analytics.
+        4.  **User Notifications:**
+            *   Implement user notifications (e.g., email, desktop notifications if applicable) for significant events (e.g., trades executed, errors, required actions).
+        5.  **Backtesting Framework Integration (Conceptual):**
+            *   Design considerations for how strategies could be backtested using historical data (actual implementation might be a larger separate project but the bot's strategy modules should be designed with testability in mind).
+        6.  **Enhanced Security Measures:**
+            *   Two-Factor Authentication (2FA) for login.
+            *   Regular security audits of the codebase.
+
+# Logical Dependency Chain
+*   **Task:** Define the logical order of development for features and components.
+*   **Details:**
+    1.  **Foundation - Backend Core:**
+        *   Basic Python application structure (FastAPI/Flask).
+        *   User Authentication module (models, hashing, login endpoint).
+        *   Database setup & User model.
+    2.  **Brokerage Integration - Initial:**
+        *   Secure API key storage mechanism.
+        *   `BrokerageInterface` definition (core methods: get_option_chain, place_order, get_positions).
+        *   `TradierAdapter` implementation for these core methods. Test connectivity.
+    3.  **Core Trading Logic - PMCC MVP:**
+        *   PMCC Strategy module: Long call selection logic (ATM, min expiry).
+        *   PMCC Strategy module: Short call selection logic (fixed method, e.g., delta-based).
+        *   Fractional Kelly Position Sizing module.
+        *   Integration of position sizing into PMCC trade decision.
+    4.  **Backend API for Bot Control - MVP:**
+        *   Endpoints for setting minimal PMCC parameters.
+        *   Endpoints for starting/stopping the bot's trading loop (which uses PMCC & position sizing).
+        *   Endpoints for retrieving basic trade history and positions (initially, these might be simple pass-throughs or direct queries).
+    5.  **Frontend - MVP:**
+        *   Login page connecting to backend auth.
+        *   Basic Dashboard: Display bot status, allow start/stop, show current PMCC params.
+        *   Basic Trade History & Positions display pages.
+    6.  **MVP End-to-End Flow:** Ensure a PMCC trade can be identified, sized, and (simulated or actual) order placed, and status reflected in UI.
+    7.  **Enhancements - PMCC & UI (Phase 2):**
+        *   Full "Modify Bot Parameters" page (UI) -> depends on Backend API for all PMCC params.
+        *   PMCC Short Call - Expected Move logic (Backend) -> depends on core PMCC structure.
+        *   Interactive Option Chain Page (Frontend) -> depends on `TradierAdapter` get_option_chain.
+        *   PMCC Short Call Daily Management (Backend - scheduler) -> depends on core PMCC logic and `TradierAdapter`.
+    8.  **Extensibility & Robustness (Phase 2/3):**
+        *   Formal Brokerage API Abstraction Layer Refinement -> depends on initial `TradierAdapter`.
+        *   Pluggable Strategy Framework (Backend) -> depends on a working single strategy (PMCC).
+        *   Support for Additional Brokerage APIs -> depends on formal abstraction layer.
+
+    *   **Foundation First:** Backend User Authentication and secure API key management must precede any brokerage interaction. Core Tradier API functions (quotes, chains, orders) are foundational for any strategy logic.
+    *   **Path to Usability:** Prioritize getting a single strategy (PMCC with one short call method) working end-to-end with basic UI controls (start/stop, view status/trades) for the MVP. This allows for early testing and validation.
+    *   **Atomic & Extensible Features:** Each PMCC parameter (long call DTE, short call delta, short call selection method) can be added incrementally. The brokerage adapter is atomic per broker. The strategy module is designed to be replaceable/extensible.
+
+# Risks and Mitigations
+*   **Task:** Identify potential risks in the project and propose mitigation strategies.
+*   **Details:**
+
+    *   **Technical Challenges:**
+        *   **Risk:** Real-time / near real-time option data handling complexity (fetching, parsing, managing frequent updates for option chains and greeks).
+            *   **Mitigation:** Utilize asynchronous programming (async/await in Python for I/O, async data fetching in frontend). Implement efficient data caching for option chains with appropriate refresh intervals. Focus on critical data points needed for decision-making rather than fetching everything all the time.
+        *   **Risk:** Brokerage API limitations (rate limits, reliability, changes in API).
+            *   **Mitigation:** Implement robust error handling, retry mechanisms with exponential backoff for API calls. Adhere strictly to documented rate limits. Design the `BrokerageAdapter` to encapsulate broker-specific logic, making it easier to update if the API changes. Have a clear notification mechanism for persistent API failures.
+        *   **Risk:** Complexity in accurately implementing PMCC logic, especially short call selection and daily management.
+            *   **Mitigation:** Develop strategy logic in a modular way. Implement extensive unit tests for each component of the strategy (long call selection, short call selection, rolling conditions). Use paper trading extensively before live trading. Start with simpler rules and add complexity iteratively.
+        *   **Risk:** Implementing Fractional Kelly correctly and obtaining reliable inputs (win probability, payout ratios).
+            *   **Mitigation:** For MVP, allow user to input these parameters directly. Clearly document assumptions. Provide sensible defaults or guidance. Ensure the calculation module is well-tested. Future enhancements could explore deriving these from historical performance.
+
+    *   **MVP Scope Definition:**
+        *   **Risk:** Scope creep, trying to include too many features or too much flexibility in the MVP.
+            *   **Mitigation:** Strictly adhere to the defined MVP requirements. Focus on one strategy (PMCC with one short call method), one brokerage (Tradier), and essential UI for control and visibility. Defer advanced features and broad flexibility to later phases.
+        *   **Risk:** MVP does not deliver core value or is too buggy to be usable.
+            *   **Mitigation:** Prioritize the end-to-end execution of the core PMCC strategy. Ensure robust testing of the trading logic and order placement flow within the MVP.
+
+    *   **Resource Constraints (Abstracted - refers to complexity vs. typical AI coder capability/effort):**
+        *   **Risk:** The logic for option greeks calculation (if not directly provided by API) or complex strategy decision trees might be computationally intensive or require specialized financial knowledge.
+            *   **Mitigation:** Rely on brokerage API for greeks. Keep initial strategy logic clear and rule-based. Break down complex tasks into smaller, manageable functions. Provide very clear specifications for any complex financial calculations.
+
+    *   **Dependency Risks:**
+        *   **Risk:** Changes or deprecation of the Tradier API.
+            *   **Mitigation:** Build the `BrokerageAdapter` with a clear interface, anticipating that implementations might need to change. Monitor Tradier API documentation and community channels for announcements.
+        *   **Risk:** Inaccurate or delayed market data from the brokerage API.
+            *   **Mitigation:** This is largely outside the bot's control. Implement sanity checks on received data (e.g., prices within expected ranges, non-stale timestamps). Log data quality issues. Users should be aware of their data source's reliability.
+
+    *   **Security Vulnerabilities:**
+        *   **Risk:** Exposure or compromise of user's brokerage API keys.
+            *   **Mitigation:**
+                *   Store API keys encrypted at rest (e.g., using Fernet encryption with a key managed securely by the application or environment).
+                *   Transmit API keys to the backend over HTTPS only.
+                *   Ensure backend code does not log API keys.
+                *   Recommend users create API keys with restricted permissions (trade-only, no withdrawals) if their broker supports it.
+        *   **Risk:** Unauthorized access to the bot's control interface leading to unintended trades.
+            *   **Mitigation:** Implement strong authentication (hashed passwords with salt). Secure session management (e.g., JWTs with short expiry, HTTPS-only cookies). Role-based access control if multiple users were ever a concept (not for MVP).
+        *   **Risk:** Web application vulnerabilities (XSS, CSRF, SQL Injection).
+            *   **Mitigation:** Use established frameworks (FastAPI, React) that have built-in protections. Sanitize all user inputs. Use ORM to prevent SQL injection. Implement CSRF protection for state-changing requests. Follow OWASP Top 10 guidelines.
+
+    *   **Scalability and Performance (Primarily for a single-user instance):**
+        *   **Risk:** Bot becomes slow or unresponsive if monitoring many underlyings or if PMCC calculations are too slow for many positions.
+            *   **Mitigation:** Optimize Python code for critical loops. Use efficient data structures. Offload long-running tasks (like periodic checks for many positions) to background threads or an asynchronous task queue (APScheduler for single process, Celery for multi-process). For option chain display, ensure asynchronous loading and pagination/virtualization if chains are very large.
+
+    *   **Trading Specific Risks:**
+        *   **Risk:** Bugs in trading logic leading to significant financial loss.
+            *   **Mitigation:**
+                *   **Extensive Testing:** Unit tests, integration tests.
+                *   **Paper Trading Mode:** Strongly recommend and facilitate running the bot in a paper trading account first.
+                *   **Kill Switch:** Easy way to immediately stop the bot and cancel open orders.
+                *   **Detailed Logging:** Log all decisions, orders placed, errors encountered.
+                *   **Parameter Sanity Checks:** Validate user-configured parameters to prevent obviously problematic settings.
+                *   **Incremental Rollout:** Start with small position sizes during initial live trading.
+        *   **Risk:** Unexpected market conditions (flash crashes, high volatility) causing strategy to behave poorly.
+            *   **Mitigation:** While the bot executes a strategy, it doesn't invent it. The strategy itself should have risk management rules. The bot can implement global risk controls like max loss per day (future enhancement), or max position size. Clear disclaimers that the user is responsible for the strategy and its risks.
+
+# Appendix
+*   **Task:** Include any supplementary information that supports the PRD.
+*   **Details:**
+
+    *   **Glossary of Terms:**
+        *   **ATM (At-The-Money):** An option whose strike price is equal or very close to the current market price of the underlying asset.
+        *   **API (Application Programming Interface):** A set of rules and protocols for building and interacting with software applications.
+        *   **Delta:** An option Greek that measures the rate of change of an option's price relative to a $1 change in the underlying asset's price. Ranges from 0 to 1 for calls, -1 to 0 for puts.
+        *   **DTE (Days To Expiry):** The number of days remaining until an option contract expires.
+        *   **Expected Move:** The amount an underlying asset's price is expected to move (up or down) by a certain expiration date, often calculated based on current option prices (implied volatility).
+        *   **Fractional Kelly (Kelly Criterion):** A formula used to determine the optimal size of a series of bets to maximize long-term growth of capital. Fractional Kelly uses a fraction of the full Kelly bet to reduce volatility and risk of ruin. Golden Ratio (~0.618) is one such fraction.
+        *   **Greeks (Option Greeks):** A set of risk measures that indicate how sensitive an option's price is to various factors like underlying price changes (Delta), time decay (Theta), volatility changes (Vega), and the rate of change of Delta (Gamma).
+        *   **ITM (In-The-Money):** A call option whose strike price is below the current market price of the underlying, or a put option whose strike price is above the current market price.
+        *   **OTM (Out-of-The-Money):** A call option whose strike price is above the current market price of the underlying, or a put option whose strike price is below the current market price.
+        *   **PMCC (Poor Man's Covered Call):** An options strategy that mimics a covered call but uses a long-dated, deep ITM (or ATM) call option (LEAPS substitute) instead of owning the underlying stock, thus requiring less capital. A shorter-dated, OTM call is then sold against this long call.
+        *   **Tradier:** An online brokerage firm that provides an API for trading stocks and options.
+
+    *   **External Resources:**
+        *   **Tradier API Documentation:** [https://documentation.tradier.com/brokerage-api](https://documentation.tradier.com/brokerage-api) (Link to be verified for current accuracy).
+        *   **shadcn/ui:** [https://ui.shadcn.com/](https://ui.shadcn.com/)
+        *   **FastAPI:** [https://fastapi.tiangolo.com/](https://fastapi.tiangolo.com/)
+        *   **React:** [https://react.dev/](https://react.dev/)
+        *   **Tailwind CSS:** [https://tailwindcss.com/](https://tailwindcss.com/)
+
+    *   **Assumptions:**
+        *   The initial deployment target is a single-user environment (e.g., local machine or personal VPS). Multi-tenancy is not an MVP requirement.
+        *   The user possesses the necessary Tradier brokerage account and API key.
+        *   The user has a basic understanding of options trading and the PMCC strategy.
+        *   The bot is intended for automated execution based on pre-defined logic; it does not provide financial advice or AI-driven predictive signals beyond the configured strategy.
+        *   Reliable internet connectivity is available for the bot to operate.
+        *   The Python environment will be version 3.8 or higher.
