@@ -11,7 +11,7 @@ class BrokerageInterface(ABC):
         pass
 
     @abstractmethod
-    def get_option_chain(self, symbol: str) -> List[Dict]:
+    async def get_option_chain(self, symbol: str) -> List[Dict]:
         """
         Retrieve option chain data for a given symbol.
         :param symbol: The stock symbol.
@@ -20,7 +20,7 @@ class BrokerageInterface(ABC):
         pass
 
     @abstractmethod
-    def place_order(self, symbol: str, quantity: float, order_type: str, price: Optional[float] = None) -> Dict:
+    async def place_order(self, symbol: str, quantity: float, order_type: str, price: Optional[float] = None) -> Dict:
         """
         Place an order for a given symbol.
         :param symbol: The stock symbol.
@@ -40,7 +40,7 @@ class BrokerageInterface(ABC):
         pass
 
     @abstractmethod
-    def get_quotes(self, symbols: List[str]) -> Dict:
+    async def get_quotes(self, symbols: List[str]) -> Dict:
         """
         Retrieve current market quotes for specified symbols.
         :param symbols: A list of stock symbols.

@@ -20,3 +20,4 @@ class BotInstance(BaseModel, table=True):
     brokerage_connection: "BrokerageConnection" = Relationship(back_populates="bot_instances")
     trade_orders: List["TradeOrder"] = Relationship(back_populates="bot_instance")
     positions: List["Position"] = Relationship(back_populates="bot_instance")
+    bot_status_entries: List["BotStatus"] = Relationship(back_populates="bot_instance")

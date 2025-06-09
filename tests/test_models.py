@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.model.base import BaseModel as Base
-from src.models import User, Session, BrokerageConnection, BotInstance, StrategyDefinition, StrategyParameter, TradeOrder, Position, MarketDataCache_OptionChain
+from src.models import User, Session, BrokerageConnection, BotInstance, StrategyDefinition, StrategyParameter, TradeOrder, Position
 from src.config import settings
 from datetime import datetime, timedelta, timezone
 from src.utils.encryption import generate_key # Import generate_key
@@ -24,12 +24,11 @@ def tables(engine):
 def db_session(engine, tables):
     """Returns an sqlalchemy session, and after the test tears down everything."""
     connection = engine.connect()
-    transaction = connection.begin()
     Session = sessionmaker(bind=connection)
     session = Session()
     yield session
+    session.rollback() # Rollback the session's transaction
     session.close()
-    transaction.rollback()
     connection.close()
 
 def test_user_creation(db_session):
@@ -250,24 +249,3 @@ def test_position_creation(db_session):
     db_session.refresh(position)
     assert position.id is not None
     assert position.bot_instance.name == "PositionBot"
-
-def test_market_data_cache_option_chain_creation(db_session):
-    option_data = MarketDataCache_OptionChain(
-        symbol="GOOG",
-        expiration_date=datetime(2025, 12, 31, tzinfo=timezone.utc),
-        strike_price=100.0,
-        option_type="call",
-        bid=5.0,
-        ask=5.5,
-        implied_volatility=0.2,
-        delta=0.5,
-        gamma=0.05,
-        theta=-0.01,
-        vega=0.1,
-        open_interest=1000,
-        volume=500
-    )
-    db_session.add(option_data)
-    db_session.commit()
-    assert option_data.id is not None
-    assert option_data.symbol == "GOOG"

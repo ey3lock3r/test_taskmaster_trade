@@ -1,7 +1,8 @@
 from typing import List, Optional
 from sqlmodel import Field, Relationship, SQLModel
-from passlib.context import CryptContext
 from datetime import datetime, timezone
+from passlib.context import CryptContext
+from passlib.hash import bcrypt # Import bcrypt from passlib
 
 from src.model.base import BaseModel # Import BaseModel
 
@@ -28,6 +29,10 @@ class User(BaseModel, table=True):
         self.hashed_password = pwd_context.hash(password)
 
     def check_password(self, password: str) -> bool:
+        # Ensure that the stored hash is compatible with the current scheme
+        # If the hash was created with bcrypt, passlib will still try to verify it with bcrypt
+        # This might still cause issues if the underlying bcrypt library is problematic
+        # A more robust solution might involve re-hashing old passwords on first successful login
         return pwd_context.verify(password, self.hashed_password)
 
     def __repr__(self):

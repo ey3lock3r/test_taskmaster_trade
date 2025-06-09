@@ -6,7 +6,6 @@ from .brokerage_connection import BrokerageConnection
 from .bot_instance import BotInstance
 from .strategy_definition import StrategyDefinition
 from .strategy_parameters import StrategyParameter
-from .market_data_cache import MarketDataCache_OptionChain
 from .trade_order import TradeOrder
 from .position import Position
 from .bot_status import BotStatus

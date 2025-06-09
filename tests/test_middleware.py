@@ -10,8 +10,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # from src.main import app # Will get app from conftest client fixture
 from sqlalchemy.orm import Session as SQLAlchemySession # Import for type hinting
-from src.models.user import User
-from src.utils.security import hash_password, create_access_token
+from src.models.user import User, pwd_context # Import pwd_context
+from src.utils.security import create_access_token # Remove hash_password
 # from src.database import get_db # Will use db_session from conftest
 
 # Create test client - remove global client, will use fixture
@@ -23,12 +23,14 @@ def test_user(session: SQLAlchemySession): # Use session fixture
     db = session # Use the injected test session
     username = f"testuser_{datetime.now().timestamp()}"
     password = "testpass123"
-    hashed = hash_password(password)
+    hashed = pwd_context.hash(password) # Use pwd_context for hashing
     print("Creating test user")
     
     # Create test user
+    test_email = f"{username}@example.com"
     user_instance = User(
         username=username,
+        email=test_email,
         hashed_password=hashed,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc)
@@ -37,8 +39,8 @@ def test_user(session: SQLAlchemySession): # Use session fixture
     db.commit()
     db.refresh(user_instance) # Ensure all attributes are loaded, including ID
     
-    # Yield data needed for tests, including the user ID for potential re-fetching
-    yield {"username": username, "password": password, "id": user_instance.id}
+    # Yield data needed for tests, including the user ID and email for potential re-fetching
+    yield {"username": username, "password": password, "id": user_instance.id, "email": test_email}
     
     # No explicit cleanup here, db_session fixture handles it
     pass
@@ -79,7 +81,7 @@ def test_valid_authentication(client: TestClient, test_user): # Add client fixtu
     # Perform login to create a session and get a valid token
     login_response = client.post(
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["email"], "password": test_user["password"]}
     )
     assert login_response.status_code == 200
     valid_token = login_response.json()["access_token"]
@@ -91,6 +93,6 @@ def test_valid_authentication(client: TestClient, test_user): # Add client fixtu
 def test_exempt_routes(client: TestClient): # Add client fixture
     """Test that exempt routes don't require authentication"""
     # Send POST with password but no username/email to trigger the model validator
-    response = client.post("/api/v1/token", data={"password": "testpass123"})
+    response = client.post("/api/v1/token", json={"password": "testpass123"})
     assert response.status_code == 422  # Now bypasses middleware but fails at route validation
-    assert response.json()["detail"][0]["msg"] == "Field required" # OAuth2PasswordRequestForm expects 'username' and 'password'
+    assert "Either username or email must be provided" in response.json()["detail"][0]["msg"]

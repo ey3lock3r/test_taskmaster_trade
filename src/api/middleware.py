@@ -23,7 +23,7 @@ class AuthMiddleware:
     ):
         self.app = app
         self.exclude_paths = exclude_paths if exclude_paths is not None else []
-        self.exempt_routes = ["/api/v1/token", "/api/v1/register", "/api/v1/login", "/api/v1/health", "/api/v1/refresh"] + self.exclude_paths
+        self.exempt_routes = ["/", "/api/v1/token", "/api/v1/register", "/api/v1/login", "/api/v1/health", "/api/v1/refresh"] + self.exclude_paths
         self.db_engine = db_engine # Store the engine
         
     async def __call__(self, scope, receive, send):
@@ -33,6 +33,12 @@ class AuthMiddleware:
 
         request = Request(scope)
         print(f"AuthMiddleware: Incoming request to path: {request.url.path}")
+
+        # Allow OPTIONS requests to bypass authentication (CORS preflight)
+        if request.method == "OPTIONS":
+            print(f"AuthMiddleware: OPTIONS request for {request.url.path} is exempt from authentication.")
+            await self.app(scope, receive, send)
+            return
         
         auth_header = request.headers.get("Authorization")
         token = None
@@ -46,7 +52,8 @@ class AuthMiddleware:
                 print("AuthMiddleware: No token found for non-exempt path, returning 401.")
                 response = JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Missing or invalid authorization token"}
+                    content={"detail": "Missing or invalid authorization token"},
+                    headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*"}
                 )
                 await response(scope, receive, send)
                 return
@@ -55,8 +62,9 @@ class AuthMiddleware:
             print("AuthMiddleware: Database session created.")
             
             try:
+                session.expire_all() # Add this line to ensure fresh data
                 logger.debug(f"AuthMiddleware: Processing request for path: {request.url.path}, token: {token}")
-                payload = verify_token(token)
+                payload = await verify_token(token) # Await the verify_token call
                 logger.debug(f"AuthMiddleware: Token verified, payload type: {payload.get('type')}")
                 print(f"AuthMiddleware: Token payload: {payload}")
                 
@@ -128,7 +136,8 @@ class AuthMiddleware:
                 print(f"AuthMiddleware: Caught HTTPException: {e.detail} with status {e.status_code}. Returning JSONResponse.")
                 response = JSONResponse(
                     status_code=e.status_code,
-                    content={"detail": e.detail}
+                    content={"detail": e.detail},
+                    headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*"}
                 )
                 await response(scope, receive, send)
                 return
@@ -137,7 +146,8 @@ class AuthMiddleware:
                 print(f"AuthMiddleware: Unhandled exception: {e}. Returning 500.")
                 response = JSONResponse(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    content={"detail": f"Authentication error: {str(e)}"}
+                    content={"detail": f"Authentication error: {str(e)}"},
+                    headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*"}
                 )
                 await response(scope, receive, send)
                 return

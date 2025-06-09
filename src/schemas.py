@@ -83,7 +83,8 @@ class BotInstanceResponse(SQLModel):
     is_active: bool
 
 class BotStatusResponse(SQLModel):
-    id: int
+    id: Optional[int] = None # Make ID optional as it might not exist for default inactive status
+    bot_instance_id: int
     status: str
     last_check_in: Optional[datetime] = None
     is_active: bool

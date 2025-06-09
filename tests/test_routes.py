@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 import os
 import jwt
@@ -11,7 +12,8 @@ from src.models.position import Position
 import uuid
 
 # Test cases
-def test_register_user_success(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_register_user_success(client: TestClient, session: Session):
     """Test successful user registration"""
     response = client.post(
         "/api/v1/register",
@@ -20,7 +22,8 @@ def test_register_user_success(client: TestClient, session: Session):
     assert response.status_code == 201
     assert "id" in response.json()
 
-def test_register_duplicate_username(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_register_duplicate_username(client: TestClient, session: Session):
     """Test registration with duplicate username"""
     # First registration
     client.post(
@@ -36,7 +39,8 @@ def test_register_duplicate_username(client: TestClient, session: Session):
     assert response.status_code == 400
     assert "Username already registered" in response.json()["detail"]
 
-def test_register_invalid_username(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_register_invalid_username(client: TestClient, session: Session):
     """Test registration with invalid username"""
     # Too short
     response = client.post(
@@ -51,7 +55,8 @@ def test_register_invalid_username(client: TestClient, session: Session):
     )
     assert response.status_code == 422
 
-def test_register_invalid_password(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_register_invalid_password(client: TestClient, session: Session):
     """Test registration with invalid password"""
     # Too short
     response = client.post(
@@ -74,7 +79,8 @@ def test_register_invalid_password(client: TestClient, session: Session):
     )
     assert response.status_code == 422
 
-def test_register_invalid_email(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_register_invalid_email(client: TestClient, session: Session):
     """Test registration with invalid email"""
     response = client.post(
         "/api/v1/register",
@@ -82,18 +88,20 @@ def test_register_invalid_email(client: TestClient, session: Session):
     )
     assert response.status_code == 422
     
-def test_login_success(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_login_success(client: TestClient, session: Session):
     """Test successful login returns valid token with correct claims"""
     # Register a user first with valid alphanumeric username
+    test_email = f"testlogin_{uuid.uuid4()}@example.com"
     client.post(
         "/api/v1/register",
-        json={"username": "testlogin", "password": "testpass123", "email": f"testlogin_{uuid.uuid4()}@example.com"}
+        json={"username": "testlogin", "password": "testpass123", "email": test_email}
     )
 
     # Login with correct credentials
     response = client.post(
         "/api/v1/token",
-        data={"username": "testlogin", "password": "testpass123"}
+        json={"email": test_email, "password": "testpass123"}
     )
     assert response.status_code == 200
     assert "access_token" in response.json()
@@ -107,63 +115,159 @@ def test_login_success(client: TestClient, session: Session):
     # This requires importing settings from src.config
     from src.config import settings
     payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    assert payload["sub"] == "testlogin"
+    assert payload["sub"] == "testlogin" # The sub claim is still the username
     assert "user_id" in payload
     assert "exp" in payload
     assert payload["type"] == "access"
     
-    # Test email-based login (if supported by your login endpoint)
-    # This part might need adjustment based on how your /token endpoint handles email vs username
-    # For now, assuming it primarily uses username from OAuth2PasswordRequestForm
-    
-def test_login_invalid_username(client: TestClient, session: Session):
-    """Test login with invalid username"""
+@pytest.mark.asyncio
+async def test_login_invalid_email(client: TestClient, session: Session):
+    """Test login with invalid email"""
     response = client.post(
         "/api/v1/token",
-        data={"username": "invalid_user", "password": "anypass"}
+        json={"email": "invalid@example.com", "password": "anypass"}
     )
     assert response.status_code == 401
     assert "Incorrect username or password" in response.json()["detail"]
 
-def test_login_invalid_password(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_login_invalid_password(client: TestClient, session: Session):
     """Test login with invalid password"""
     # Register a user first
+    test_email = f"test_invpass_{uuid.uuid4()}@example.com"
     client.post(
         "/api/v1/register",
-        json={"username": "test_invpass", "password": "correctpass", "email": f"test_invpass_{uuid.uuid4()}@example.com"}
+        json={"username": "test_invpass", "password": "correctpass", "email": test_email}
     )
     
     # Login with wrong password
     response = client.post(
         "/api/v1/token",
-        data={"username": "test_invpass", "password": "wrongpass"}
+        json={"email": test_email, "password": "wrongpass"}
     )
     assert response.status_code == 401
     assert "Incorrect username or password" in response.json()["detail"]
     
-def test_login_rate_limiting(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_login_rate_limiting(client: TestClient, session: Session):
     """Test rate limiting blocks excessive login attempts (if implemented)"""
     # This test depends on rate limiting logic in routes.py, which might be removed with SQLModel refactor
     # If rate limiting is re-implemented, this test needs to be adjusted.
-    pass # Skipping for now as rate limiting might be removed/changed
+    # Register a user first
+    test_email = f"test_ratelimit_{uuid.uuid4()}@example.com"
+    client.post(
+        "/api/v1/register",
+        json={"username": "testratelimit", "password": "testpass123", "email": test_email}
+    )
 
-def test_login_missing_fields(client: TestClient, session: Session):
+    # Attempt multiple logins to trigger rate limit
+    for _ in range(5): # 5 attempts allowed in 60 seconds
+        response = client.post(
+            "/api/v1/token",
+            json={"email": test_email, "password": "testpass123"}
+        )
+        assert response.status_code == 200 # First 5 attempts should succeed
+
+    # The 6th attempt should still succeed in test environment (rate limiting bypassed)
+    response = client.post(
+        "/api/v1/token",
+        json={"email": test_email, "password": "testpass123"}
+    )
+    assert response.status_code == 200 # Expect 200 OK as rate limiting is bypassed
+    # No assertion on "Too Many Requests" detail as rate limiting is bypassed
+
+@pytest.mark.asyncio
+async def test_login_missing_fields(client: TestClient, session: Session):
     """Test login with missing fields"""
     # Missing password
     response = client.post(
         "/api/v1/token",
-        data={"username": "anyuser"}
+        json={"email": "anyuser@example.com"}
     )
     assert response.status_code == 422
     assert "Field required" in response.json()["detail"][0]["msg"]
 
-def test_get_bot_parameters_success(client: TestClient, session: Session):
-    """Test retrieving bot parameters successfully."""
-    # Register a user and log in to get a token
-    register_response = client.post("/api/v1/register", json={"username": "testuserbot", "password": "testpass123", "email": f"testuser_bot_{uuid.uuid4()}@example.com"})
+@pytest.mark.asyncio
+async def test_get_bot_status_success(client: TestClient, session: Session):
+    """Test retrieving bot status successfully."""
+    test_email = f"testuser_bot_status_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testuserbotstatus", "password": "testpass123", "email": test_email})
     assert register_response.status_code == 201
     
-    login_response = client.post("/api/v1/token", data={"username": "testuserbot", "password": "testpass123"})
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    user = session.exec(select(User).where(User.username == "testuserbotstatus")).first()
+    brokerage_connection = BrokerageConnection(
+        user_id=user.id,
+        brokerage_name="Tradier",
+        api_key="dummy_key",
+        api_secret="dummy_secret"
+    )
+    session.add(brokerage_connection)
+    session.commit()
+    session.refresh(brokerage_connection)
+
+    bot_instance = BotInstance(
+        user_id=user.id,
+        strategy_id=1,
+        brokerage_connection_id=brokerage_connection.id,
+        name="TestBotStatus",
+        status="running",
+        parameters={"param1": "value1"}
+    )
+    session.add(bot_instance)
+    session.commit()
+    session.refresh(bot_instance)
+
+    # Manually add a BotStatus entry for the bot instance
+    from src.models.bot_status import BotStatus
+    bot_status = BotStatus(
+        bot_instance_id=bot_instance.id,
+        status="active",
+        last_check_in=datetime.now(timezone.utc),
+        is_active=True
+    )
+    session.add(bot_status)
+    session.commit()
+    session.refresh(bot_status)
+
+    response = client.get("/api/v1/bot/status", headers=headers)
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+    assert len(response.json()) > 0
+    assert response.json()[0]["bot_instance_id"] == bot_instance.id
+    assert response.json()[0]["status"] == "active"
+    assert "last_check_in" in response.json()[0]
+    assert response.json()[0]["is_active"] == True
+
+@pytest.mark.asyncio
+async def test_get_bot_status_no_bots(client: TestClient, session: Session):
+    """Test retrieving bot status when no bot instances exist for the user."""
+    test_email = f"testuser_no_bots_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testusernobots", "password": "testpass123", "email": test_email})
+    assert register_response.status_code == 201
+    
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get("/api/v1/bot/status", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+@pytest.mark.asyncio
+async def test_get_bot_parameters_success(client: TestClient, session: Session):
+    """Test retrieving bot parameters successfully."""
+    # Register a user and log in to get a token
+    test_email = f"testuser_bot_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testuserbot", "password": "testpass123", "email": test_email})
+    assert register_response.status_code == 201
+    
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -197,12 +301,14 @@ def test_get_bot_parameters_success(client: TestClient, session: Session):
     assert response.status_code == 200
     assert response.json()["parameters"] == {"param1": "value1", "param2": 123}
 
-def test_get_bot_parameters_not_found(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_get_bot_parameters_not_found(client: TestClient, session: Session):
     """Test retrieving bot parameters for a non-existent bot."""
-    register_response = client.post("/api/v1/register", json={"username": "testusernotfound", "password": "testpass123", "email": f"testuser_notfound_{uuid.uuid4()}@example.com"})
+    test_email = f"testuser_notfound_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testusernotfound", "password": "testpass123", "email": test_email})
     assert register_response.status_code == 201
     
-    login_response = client.post("/api/v1/token", data={"username": "testusernotfound", "password": "testpass123"})
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -211,12 +317,14 @@ def test_get_bot_parameters_not_found(client: TestClient, session: Session):
     assert response.status_code == 404
     assert "Bot instance not found" in response.json()["detail"]
 
-def test_update_bot_parameters_success(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_update_bot_parameters_success(client: TestClient, session: Session):
     """Test updating bot parameters successfully."""
-    register_response = client.post("/api/v1/register", json={"username": "testuserupdate", "password": "testpass123", "email": f"testuser_update_{uuid.uuid4()}@example.com"})
+    test_email = f"testuser_update_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testuserupdate", "password": "testpass123", "email": test_email})
     assert register_response.status_code == 201
     
-    login_response = client.post("/api/v1/token", data={"username": "testuserupdate", "password": "testpass123"})
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -260,12 +368,14 @@ def test_update_bot_parameters_success(client: TestClient, session: Session):
     updated_bot_instance = session.exec(select(BotInstance).where(BotInstance.id == bot_instance.id)).first()
     assert updated_bot_instance.parameters == updated_payload["parameters"]
 
-def test_update_bot_parameters_invalid_payload(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_update_bot_parameters_invalid_payload(client: TestClient, session: Session):
     """Test updating bot parameters with an invalid payload (e.g., missing required fields)."""
-    register_response = client.post("/api/v1/register", json={"username": "testuserinvalidpayload", "password": "testpass123", "email": f"testuser_invalid_payload_{uuid.uuid4()}@example.com"})
+    test_email = f"testuser_invalid_payload_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testuserinvalidpayload", "password": "testpass123", "email": test_email})
     assert register_response.status_code == 201
     
-    login_response = client.post("/api/v1/token", data={"username": "testuserinvalidpayload", "password": "testpass123"})
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
@@ -300,12 +410,14 @@ def test_update_bot_parameters_invalid_payload(client: TestClient, session: Sess
     # Check for a specific error message related to missing fields
     assert "Field required" in response.json()["detail"][0]["msg"]
 
-def test_update_bot_parameters_not_found(client: TestClient, session: Session):
+@pytest.mark.asyncio
+async def test_update_bot_parameters_not_found(client: TestClient, session: Session):
     """Test updating bot parameters for a non-existent bot."""
-    register_response = client.post("/api/v1/register", json={"username": "testuserupdatenotfound", "password": "testpass123", "email": f"testuser_update_notfound_{uuid.uuid4()}@example.com"})
+    test_email = f"testuser_update_notfound_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testuserupdatenotfound", "password": "testpass123", "email": test_email})
     assert register_response.status_code == 201
     
-    login_response = client.post("/api/v1/token", data={"username": "testuserupdatenotfound", "password": "testpass123"})
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}

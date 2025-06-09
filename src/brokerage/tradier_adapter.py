@@ -2,11 +2,12 @@ from typing import Dict, Optional, List
 from .interface import BrokerageInterface
 from src.models.brokerage_connection import BrokerageConnection
 from src.config import settings
+from src.utils.redis_utils import redis_client # Import redis_client
 import requests
 import base64
 import urllib.parse
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 class TradierAdapter(BrokerageInterface):
     """Tradier brokerage adapter implementation."""
@@ -188,10 +189,16 @@ class TradierAdapter(BrokerageInterface):
             print(f"Error exchanging code for token: {e}")
             return None
 
-    def get_option_chain(self, symbol: str) -> List[Dict]:
+    async def get_option_chain(self, symbol: str) -> List[Dict]:
         """
-        Retrieve option chain data for a given symbol from Tradier API.
+        Retrieve option chain data for a given symbol from Tradier API, with Redis caching.
         """
+        cache_key = f"option_chain:{symbol}"
+        if redis_client:
+            cached_data = await redis_client.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
+
         url = f"{self._base_url}markets/options/chains"
         headers = self._get_auth_headers()
         params = {
@@ -200,12 +207,18 @@ class TradierAdapter(BrokerageInterface):
         try:
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
-            return response.json().get('options', {}).get('option', [])
+            option_chain_data = response.json().get('options', {}).get('option', [])
+            
+            if redis_client:
+                # Cache for 1 hour (3600 seconds)
+                await redis_client.setex(cache_key, 3600, json.dumps(option_chain_data))
+            
+            return option_chain_data
         except requests.exceptions.RequestException as e:
             print(f"Error fetching option chain for {symbol}: {e}")
             return []
 
-    def place_order(self, symbol: str, quantity: float, order_type: str, price: Optional[float] = None) -> Dict:
+    async def place_order(self, symbol: str, quantity: float, order_type: str, price: Optional[float] = None) -> Dict:
         """
         Place an order for a given symbol via Tradier API.
         """
@@ -243,20 +256,33 @@ class TradierAdapter(BrokerageInterface):
             print(f"Error fetching positions: {e}")
             return []
 
-    def get_quotes(self, symbols: List[str]) -> Dict:
+    async def get_quotes(self, symbols: List[str]) -> Dict:
         """
-        Retrieve current market quotes for specified symbols from Tradier API.
+        Retrieve current market quotes for specified symbols from Tradier API, with Redis caching.
         """
+        symbols_str = ",".join(symbols)
+        cache_key = f"quotes:{symbols_str}"
+        if redis_client:
+            cached_data = await redis_client.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
+
         url = f"{self._base_url}markets/quotes"
         headers = self._get_auth_headers()
         params = {
-            "symbols": ",".join(symbols)
+            "symbols": symbols_str
         }
         try:
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             quotes_data = response.json().get('quotes', {}).get('quote', [])
-            return {quote['symbol']: quote for quote in quotes_data}
+            quotes_dict = {quote['symbol']: quote for quote in quotes_data}
+            
+            if redis_client:
+                # Cache for 5 minutes (300 seconds)
+                await redis_client.setex(cache_key, 300, json.dumps(quotes_dict))
+            
+            return quotes_dict
         except requests.exceptions.RequestException as e:
             print(f"Error fetching quotes for {symbols}: {e}")
             return {}

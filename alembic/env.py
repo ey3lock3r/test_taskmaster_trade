@@ -16,10 +16,10 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from src.model.base import Base
+from src.model.base import BaseModel
 from src.models import * # Import all models to ensure they are registered with Base.metadata
 from src.models.brokerage_connection import BrokerageConnection # Import specific model for type handling
-target_metadata = Base.metadata
+target_metadata = BaseModel.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

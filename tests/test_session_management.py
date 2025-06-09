@@ -9,9 +9,10 @@ import time
 from sqlalchemy.orm import Session as SQLAlchemySession, sessionmaker
 from sqlmodel import Session, select, delete
 
-from src.models.user import User
+from src.models.user import User, pwd_context # Import pwd_context
 from src.models.session import Session as SessionModel # Alias the model to avoid conflict with sqlmodel.Session
-from src.utils.security import create_access_token, create_refresh_token, hash_password
+from src.utils.security import create_access_token, create_refresh_token
+from src.utils.redis_utils import add_jti_to_blacklist # Import add_jti_to_blacklist
 
 
 # Setup logging for tests
@@ -23,7 +24,7 @@ def test_user(session: Session):
     db = session
     username = f"testuser_session_{uuid.uuid4()}" # Use UUID for robust uniqueness
     password = "testpassword"
-    hashed = hash_password(password)
+    hashed = pwd_context.hash(password) # Use pwd_context for hashing
     
     # Create test user
     user = User(username=username, email=f"{username}@example.com", hashed_password=hashed)
@@ -34,7 +35,7 @@ def test_user(session: Session):
     # Create an initial session for the user to avoid foreign key constraint issues
     try:
         # Generate a refresh token
-        refresh_token = create_refresh_token()
+        refresh_token = create_refresh_token(data={"sub": user.username, "user_id": str(user.id)})
         new_session_record = SessionModel(
             user_id=user.id,
             access_token="initial_token",
@@ -68,7 +69,7 @@ def valid_token(test_user, client): # Renamed client_fixture to client
     # Create a valid session by logging in
     response = client.post( # Changed client_fixture to client
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["user"].email, "password": test_user["password"]}
     )
     assert response.status_code == 200
     return response.json().get("access_token")
@@ -77,7 +78,7 @@ def test_session_creation_on_login(test_user, valid_token, session, client): # R
     # Verify session is created on successful login
     response = client.post( # Changed client_fixture to client
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["user"].email, "password": test_user["password"]}
     )
     assert response.status_code == 200
     token = response.json().get("access_token")
@@ -98,7 +99,7 @@ def test_session_timeout(test_user, session, client): # Renamed client_fixture t
         data={"sub": test_user["username"], "user_id": str(test_user["user"].id)},
         expires_delta=timedelta(seconds=5)
     )
-    refresh_token = create_refresh_token()
+    refresh_token = create_refresh_token(data={"sub": test_user["username"], "user_id": str(test_user["user"].id)})
 
     # Create session in database
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=5)
@@ -124,22 +125,22 @@ def test_session_timeout(test_user, session, client): # Renamed client_fixture t
     )
     assert response.status_code == 200 # First request should succeed
     
-    # Commenting out the expiration logic for now to isolate the 404 issue
-    # # Wait for token to expire
-    # time.sleep(6) # Increased sleep to ensure token expiration
+    # Wait for token to expire
+    time.sleep(6) # Increased sleep to ensure token expiration
     
-    # # Explicitly expire the session in the database to ensure it's seen as expired
-    # new_session_record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
-    # db.commit()
-    # db.refresh(new_session_record) # Refresh the session object to get latest state
+    # Explicitly expire the session in the database to ensure it's seen as expired
+    new_session_record.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.add(new_session_record) # Add the modified object back to the session
+    db.commit()
+    db.refresh(new_session_record) # Refresh the session object to get latest state
     
-    # # Try to use expired token
-    # response = client.get( # Changed client_fixture to client
-    #     "/api/v1/users/me/",
-    #     headers={"Authorization": f"Bearer {access_token}"}
-    # )
-    # assert response.status_code == 401
-    # assert "expired" in response.json().get("detail", "")
+    # Try to use expired token
+    response = client.get( # Changed client_fixture to client
+        "/api/v1/users/me/",
+        headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert response.status_code == 401
+    assert "expired" in response.json().get("detail", "")
 
 def test_access_profile_with_valid_token(valid_token, client):
     """Test accessing /api/v1/users/me/ with a valid token."""
@@ -156,7 +157,7 @@ def test_token_renewal(test_user, session, client): # Renamed client_fixture to 
     # Get refresh token from login
     login_response = client.post( # Changed client_fixture to client
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["user"].email, "password": test_user["password"]}
     )
     refresh_token = login_response.json().get("refresh_token")
     print(f"DEBUG: Test received refresh token: {refresh_token}")
@@ -166,9 +167,7 @@ def test_token_renewal(test_user, session, client): # Renamed client_fixture to 
     session_record = db.exec(select(SessionModel).where(SessionModel.refresh_token == refresh_token)).first()
     if not session_record:
         pytest.fail("Session not found for refresh token")
-    # Set the refresh token to be used in the test
-    refresh_token = session_record.refresh_token
-    print(f"DEBUG: Test using refresh token from DB: {refresh_token}")
+    print(f"DEBUG: Test found session record for refresh token: {session_record.session_id}")
     
     # Request token renewal
     response = client.post( # Changed client_fixture to client
@@ -186,7 +185,7 @@ def test_token_renewal(test_user, session, client): # Renamed client_fixture to 
     )
     assert response.status_code == 200
 
-def test_logout_terminates_session(test_user, valid_token, session, client): # Renamed client_fixture to client
+def test_logout_terminates_session(test_user, valid_token, session, client):
     # First verify session is active
     db = session
     session_record = db.exec(select(SessionModel).where(
@@ -217,19 +216,32 @@ def test_logout_terminates_session(test_user, valid_token, session, client): # R
     )
     assert response.status_code == 401
 
+def test_logging_on_successful_login(test_user, client, caplog):
+    """Test that appropriate log messages are generated on successful user login."""
+    with caplog.at_level(logging.INFO):
+        response = client.post(
+            "/api/v1/token",
+            json={"email": test_user["user"].email, "password": test_user["password"]}
+        )
+        assert response.status_code == 200
+        
+        # Check for specific log messages
+        assert any(f"Attempting login for email: {test_user['user'].email}" in record.message for record in caplog.records)
+        assert any(f"User '{test_user['user'].username}' logged in successfully. Session created." in record.message for record in caplog.records)
+
 def test_view_active_sessions(test_user, valid_token, session, client): # Renamed client_fixture to client
     # Verify session viewing functionality
     # Create multiple sessions
     # Create sessions by logging in multiple times
     login1 = client.post( # Changed client_fixture to client
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["user"].email, "password": test_user["password"]}
     )
     token1 = login1.json().get("access_token")
     
     login2 = client.post( # Changed client_fixture to client
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["user"].email, "password": test_user["password"]}
     )
     token2 = login2.json().get("access_token")
     
@@ -273,7 +285,7 @@ def test_terminate_session(test_user, valid_token, session, client): # Renamed c
     # Create session by logging in
     login_response = client.post( # Changed client_fixture to client
         "/api/v1/token",
-        data={"username": test_user["username"], "password": test_user["password"]}
+        json={"email": test_user["user"].email, "password": test_user["password"]}
     )
     other_token = login_response.json().get("access_token")
     refresh_token = login_response.json().get("refresh_token")
@@ -313,9 +325,13 @@ def test_terminate_session(test_user, valid_token, session, client): # Renamed c
     
     # Expire all objects in the session to force a reload from the database
     session.expire_all()
+
+    # Import the main app here to create a new client instance
+    from src.main import app as main_app
+    new_client = TestClient(main_app)
     
-    # Verify token no longer works with the existing client
-    response = client.get(
+    # Verify token no longer works with the new client instance
+    response = new_client.get(
         "/api/v1/users/me/",
         headers={"Authorization": f"Bearer {other_token}"}
     )

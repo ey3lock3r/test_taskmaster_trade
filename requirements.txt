@@ -1,6 +1,7 @@
 # Core dependencies
 fastapi>=0.68.0
 sqlalchemy>=1.4.25
+sqlmodel>=0.0.16 # Added for SQLModel ORM
 pydantic>=1.8.2
 pydantic-settings>=2.0.0 # Added for BaseSettings
 bcrypt>=3.2.0
@@ -8,6 +9,8 @@ PyJWT>=2.3.0
 redis>=4.3.4
 python-dotenv>=0.19.0
 pytest>=6.2.5
+fastapi-limiter[redis]>=0.1.5 # Added for rate limiting
+websockets>=10.0 # Added for real-time market data
 
 # Development dependencies
 # (Add any dev dependencies here if needed)

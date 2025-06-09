@@ -7,13 +7,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ["JWT_SECRET_KEY"] = "test_secret_key"
 os.environ["JWT_ALGORITHM"] = "HS256"
+os.environ["TESTING"] = "True" # Set TESTING environment variable for conditional logic
 
 import pytest
+import pytest_asyncio # Import pytest_asyncio
+from fastapi import Request # Import Request
+from fastapi.responses import JSONResponse, Response # Import JSONResponse and Response
 from fastapi.testclient import TestClient
 from sqlmodel import create_engine, Session, SQLModel
 from src.main import create_app
 from src.database import get_session
 from dotenv import load_dotenv
+import asyncio
+from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
+from src.utils.redis_utils import redis_client, initialize_redis, close_redis_connection
+from unittest.mock import AsyncMock, patch
 
 if os.path.exists(".env.test"):
     load_dotenv(".env.test")
@@ -28,17 +37,36 @@ def session_fixture():
         yield session
     SQLModel.metadata.drop_all(engine) # Drop tables after tests
 
-@pytest.fixture(name="client")
-def client_fixture(session: Session):
-    # Use the engine from the session fixture to create new sessions for overrides
+@pytest_asyncio.fixture(name="client")
+async def client_fixture(session: Session):
     test_engine = session.bind
 
     def get_session_override():
         with Session(test_engine) as session:
             yield session
     
-    app = create_app(db_engine=test_engine) # Pass the test_engine to create_app
+    app = create_app(db_engine=test_engine)
     app.dependency_overrides[get_session] = get_session_override
     
-    with TestClient(app) as client:
-        yield client
+    # Create a mock Redis client for FastAPILimiter.redis
+    mock_redis_client_for_limiter = AsyncMock()
+    mock_redis_client_for_limiter.script_load.return_value = "mock_sha"
+
+    # Create a mock Redis client for FastAPILimiter.redis
+    mock_redis_client_for_limiter = AsyncMock()
+    mock_redis_client_for_limiter.script_load.return_value = "mock_sha"
+
+    # Create mock identifier and callback functions
+    async def mock_identifier(request: Request):
+        return "mock_identifier"
+
+    async def mock_http_callback(request: Request, response: Response, pexpire: int):
+        # Return a dummy successful response to bypass rate limiting in tests
+        return None
+
+    # Patch FastAPILimiter.redis, FastAPILimiter.init, FastAPILimiter.identifier, and FastAPILimiter.http_callback
+    with patch("fastapi_limiter.FastAPILimiter.redis", new=mock_redis_client_for_limiter), \
+         patch("fastapi_limiter.FastAPILimiter.init", new_callable=AsyncMock), \
+         patch("fastapi_limiter.FastAPILimiter.identifier", new=mock_identifier), \
+         patch("fastapi_limiter.FastAPILimiter.http_callback", new=mock_http_callback):
+        yield TestClient(app)

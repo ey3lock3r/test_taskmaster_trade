@@ -1,37 +1,5 @@
 import pytest
-from src.utils.security import hash_password, verify_password
-
-def test_hash_password():
-    password = "testpassword"
-    hashed = hash_password(password)
-    assert len(hashed) > 0
-    assert hashed != password
-    assert verify_password(password, hashed)
-
-def test_verify_password_correct():
-    password = "securepassword123"
-    hashed = hash_password(password)
-    assert verify_password(password, hashed) is True
-
-def test_verify_password_incorrect():
-    password = "securepassword123"
-    wrong_password = "wrongpassword"
-    hashed = hash_password(password)
-    assert verify_password(wrong_password, hashed) is False
-
-def test_hash_password_invalid_input():
-    with pytest.raises(ValueError):
-        hash_password("")
-    with pytest.raises(ValueError):
-        hash_password(None)
-
-def test_verify_password_invalid_input():
-    with pytest.raises(ValueError):
-        verify_password("", "somehash")
-    with pytest.raises(ValueError):
-        verify_password("password", "")
-    with pytest.raises(ValueError):
-        verify_password("password", None)
+# Removed direct import of hash_password, verify_password as they are now handled by User model
 
 def test_user_set_and_check_password():
     """Test set_password and check_password methods of User model."""
