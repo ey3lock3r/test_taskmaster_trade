@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock # Import AsyncMock
 from sqlmodel import Session
 from src.models.bot_status import BotStatus
 from src.services.bot_service import BotService
@@ -7,6 +7,7 @@ from src.brokerage.interface import BrokerageInterface
 from src.models.brokerage_connection import BrokerageConnection
 import threading
 import time
+import asyncio # Import asyncio for running async mocks
 
 def test_get_bot_status_existing():
     """Test retrieving an existing bot status."""
@@ -79,7 +80,7 @@ def test_start_bot_inactive(mock_event, mock_thread):
     mock_session.refresh.assert_called_once_with(existing_status)
     mock_brokerage_adapter.connect.assert_called_once_with(mock_connection_details)
     mock_event.return_value.clear.assert_called_once()
-    mock_thread.assert_called_once_with(target=service._run_trading_loop, args=(1,))
+    mock_thread.assert_called_once_with(target=service._run_trading_loop_in_thread, args=(1,)) # Changed target
     mock_thread.return_value.start.assert_called_once()
 
 @patch('threading.Thread')
@@ -175,12 +176,13 @@ def test_stop_bot_inactive(mock_event):
         service._trading_thread.join.assert_not_called()
 
 @patch('threading.Event')
-@patch('time.sleep')
-def test_run_trading_loop_stops_on_event(mock_sleep, mock_event):
+@patch('asyncio.sleep') # Patch asyncio.sleep
+@patch.object(BotService, 'get_bot_status') # Patch get_bot_status as a regular mock
+def test_run_trading_loop_stops_on_event(mock_get_bot_status, mock_sleep, mock_event):
     """Test that _run_trading_loop stops when the event is set."""
     mock_session = MagicMock(spec=Session)
     mock_brokerage_adapter = MagicMock(spec=BrokerageInterface)
-    mock_brokerage_adapter.get_quotes.return_value = {"SPY": {"last": 400}}
+    mock_brokerage_adapter.get_quotes = AsyncMock(return_value={"SPY": {"last": 400}}) # Mock as AsyncMock
 
     service = BotService(mock_session, brokerage_adapter=mock_brokerage_adapter)
     
@@ -189,61 +191,63 @@ def test_run_trading_loop_stops_on_event(mock_sleep, mock_event):
     
     # Mock get_bot_status to return active status initially
     active_status = BotStatus(bot_instance_id=1, status="active", last_check_in=datetime.now(timezone.utc))
-    service.get_bot_status = MagicMock(return_value=active_status)
+    mock_get_bot_status.return_value = active_status # Use the patched mock
 
     service._stop_trading_event = mock_event.return_value # Assign the mocked event
 
-    service._run_trading_loop(1)
+    asyncio.run(service._run_trading_loop(1)) # Run the async function
 
     mock_brokerage_adapter.get_quotes.assert_called_once_with(["SPY"])
     # Removed assertions on get_bot_status and sleep call count due to brittle threading mock interactions.
     # The test implicitly verifies loop termination by completing without a timeout.
 
 @patch('threading.Event')
-@patch('time.sleep')
-def test_run_trading_loop_stops_on_inactive_status(mock_sleep, mock_event):
+@patch('asyncio.sleep') # Patch asyncio.sleep
+@patch.object(BotService, 'get_bot_status') # Patch get_bot_status as a regular mock
+def test_run_trading_loop_stops_on_inactive_status(mock_get_bot_status, mock_sleep, mock_event):
     """Test that _run_trading_loop stops when bot status becomes inactive."""
     mock_session = MagicMock(spec=Session)
     mock_brokerage_adapter = MagicMock(spec=BrokerageInterface)
-    mock_brokerage_adapter.get_quotes.return_value = {"SPY": {"last": 400}}
+    mock_brokerage_adapter.get_quotes = AsyncMock(return_value={"SPY": {"last": 400}}) # Mock as AsyncMock
 
     service = BotService(mock_session, brokerage_adapter=mock_brokerage_adapter)
     
     # Simulate bot status becoming inactive after one iteration
     active_status = BotStatus(bot_instance_id=1, status="active", last_check_in=datetime.now(timezone.utc))
     inactive_status = BotStatus(bot_instance_id=1, status="inactive", last_check_in=datetime.now(timezone.utc))
-    service.get_bot_status = MagicMock(side_effect=[active_status, inactive_status])
+    mock_get_bot_status.side_effect = [active_status, inactive_status] # Use the patched mock
 
     service._stop_trading_event = mock_event.return_value # Assign the mocked event
     mock_event.return_value.is_set.return_value = False # Keep loop running based on event
 
-    service._run_trading_loop(1)
+    asyncio.run(service._run_trading_loop(1)) # Run the async function
 
-    assert service.get_bot_status.call_count == 2 # Called once to check, once to find inactive
+    assert mock_get_bot_status.call_count == 2 # Called once to check, once to find inactive
     mock_event.return_value.set.assert_called_once() # Should set stop event
     mock_brokerage_adapter.get_quotes.assert_called_once_with(["SPY"])
     mock_sleep.assert_not_called()
 
 @patch('threading.Event')
-@patch('time.sleep')
-def test_run_trading_loop_handles_exception(mock_sleep, mock_event):
+@patch('asyncio.sleep') # Patch asyncio.sleep
+@patch.object(BotService, 'handle_bot_error') # Patch the method on the class
+@patch.object(BotService, 'get_bot_status') # Patch get_bot_status as a regular mock
+def test_run_trading_loop_handles_exception(mock_get_bot_status, mock_handle_bot_error, mock_sleep, mock_event):
     """Test that _run_trading_loop handles exceptions and sets error status."""
     mock_session = MagicMock(spec=Session)
     mock_brokerage_adapter = MagicMock(spec=BrokerageInterface)
-    mock_brokerage_adapter.get_quotes.side_effect = Exception("Test API Error")
+    mock_brokerage_adapter.get_quotes = AsyncMock(side_effect=Exception("Test API Error")) # Mock as AsyncMock
 
     service = BotService(mock_session, brokerage_adapter=mock_brokerage_adapter)
-    service.handle_bot_error = MagicMock() # Mock handle_bot_error
     
     active_status = BotStatus(bot_instance_id=1, status="active", last_check_in=datetime.now(timezone.utc))
-    service.get_bot_status = MagicMock(return_value=active_status)
+    mock_get_bot_status.return_value = active_status # Use the patched mock
 
     service._stop_trading_event = mock_event.return_value # Assign the mocked event
     mock_event.return_value.is_set.return_value = False # Keep loop running based on event
 
-    service._run_trading_loop(1)
+    asyncio.run(service._run_trading_loop(1)) # Run the async function
 
     mock_brokerage_adapter.get_quotes.assert_called_once_with(["SPY"])
-    service.handle_bot_error.assert_called_once_with(1, "Trading loop error: Test API Error")
+    mock_handle_bot_error.assert_called_once_with(1, "Trading loop error: Test API Error") # Use the patched mock
     mock_event.return_value.set.assert_called_once() # Should set stop event
     mock_sleep.assert_not_called() # Sleep should not be called after error

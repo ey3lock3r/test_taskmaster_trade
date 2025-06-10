@@ -9,6 +9,7 @@ from src.models.position import Position # Import Position model
 from datetime import datetime, timezone
 import threading
 import time
+import asyncio # Import asyncio
 
 class BotService:
     def __init__(self, session: Session, brokerage_adapter: BrokerageInterface = None, strategy: PMCCStrategy = None):
@@ -48,7 +49,8 @@ class BotService:
         self.session.refresh(status_record)
 
         self._stop_trading_event.clear()
-        self._trading_thread = threading.Thread(target=self._run_trading_loop, args=(bot_instance_id,))
+        # Run the async trading loop in a new thread
+        self._trading_thread = threading.Thread(target=self._run_trading_loop_in_thread, args=(bot_instance_id,))
         self._trading_thread.start()
 
         return {"message": "Bot started successfully."}
@@ -79,7 +81,11 @@ class BotService:
         self.session.refresh(status_record)
         return {"message": f"Bot error handled: {error_message}", "status": "error"}
 
-    def _run_trading_loop(self, bot_instance_id: int):
+    def _run_trading_loop_in_thread(self, bot_instance_id: int):
+        """Helper to run the async trading loop in a separate thread."""
+        asyncio.run(self._run_trading_loop(bot_instance_id))
+
+    async def _run_trading_loop(self, bot_instance_id: int):
         # Placeholder for the main trading loop
         # This loop will continuously run until the stop event is set
         while not self._stop_trading_event.is_set():
@@ -93,13 +99,13 @@ class BotService:
                 # Get market data
                 # For PMCC, we need option chain and current price of the underlying
                 underlying_symbol = "SPY" # This should eventually come from bot instance parameters
-                option_chain = self.brokerage_adapter.get_option_chain(underlying_symbol)
-                current_price_data = self.brokerage_adapter.get_quotes([underlying_symbol])
+                option_chain = await self.brokerage_adapter.get_option_chain(underlying_symbol)
+                current_price_data = await self.brokerage_adapter.get_quotes([underlying_symbol])
                 current_price = current_price_data.get(underlying_symbol, {}).get('last') if current_price_data else None
 
                 if not option_chain or not current_price:
                     print(f"Bot {bot_instance_id}: Missing market data for {underlying_symbol}. Skipping analysis.")
-                    time.sleep(5)
+                    await asyncio.sleep(5) # Use asyncio.sleep for async functions
                     continue
 
                 market_data = {
@@ -111,7 +117,7 @@ class BotService:
                 # Analyze market data using the strategy
                 if self.strategy.analyze(market_data):
                     print(f"Bot {bot_instance_id}: Trade opportunity identified. Executing strategy...")
-                    trade_result = self.strategy.execute()
+                    trade_result = self.strategy.execute() # Assuming execute is synchronous or handles its own async
                     if trade_result.get("status") == "success":
                         print(f"Bot {bot_instance_id}: Trade executed successfully: {trade_result.get('message')}")
                         # Persist trade and position data
@@ -191,7 +197,7 @@ class BotService:
                 else:
                     print(f"Bot {bot_instance_id}: No trade opportunity found.")
 
-                time.sleep(5) # Poll every 5 seconds
+                await asyncio.sleep(5) # Poll every 5 seconds
             except Exception as e:
                 self.handle_bot_error(bot_instance_id, f"Trading loop error: {str(e)}")
                 self._stop_trading_event.set() # Stop the loop on error

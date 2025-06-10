@@ -75,14 +75,14 @@ headless: true,
 
   webServer: [
     {
-      command: 'npm run backend_full',
+      command: 'npm run backend_full --prefix .',
       url: 'http://localhost:8000',
       timeout: 120 * 1000, // Increased timeout for backend server to start
       reuseExistingServer: !process.env.CI,
       cwd: __dirname, // Run from frontend directory where package.json is
     },
     {
-      command: 'npm run dev',
+      command: 'npm run dev --prefix .',
       url: 'http://localhost:3000',
       timeout: 120 * 1000, // Increased timeout for frontend server to start
       reuseExistingServer: !process.env.CI,

@@ -27,7 +27,7 @@ async def test_initialize_redis_connection_error(mock_redis_client):
     mock_redis_client.ping.side_effect = ConnectionError("Connection failed")
     with pytest.raises(ConnectionError):
         await initialize_redis()
-    mock_redis_client.ping.assert_called_once()
+    assert mock_redis_client.ping.call_count == 5
 
 @pytest.mark.asyncio
 async def test_close_redis_connection(mock_redis_client):

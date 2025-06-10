@@ -48,8 +48,10 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchBotData();
-  }, []);
+    if (token) {
+      fetchBotData();
+    }
+  }, [token]);
 
   const handleStartBot = async () => {
     setActionLoading(true);

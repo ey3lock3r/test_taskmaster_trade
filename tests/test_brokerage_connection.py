@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -180,7 +181,8 @@ def tradier_connection(session):
     session.refresh(connection)
     return connection
 
-def test_tradier_adapter_get_option_chain(session, tradier_connection, mock_tradier_option_chain_response):
+@pytest.mark.asyncio
+async def test_tradier_adapter_get_option_chain(session, tradier_connection, mock_tradier_option_chain_response):
     """Test get_option_chain method of TradierAdapter."""
     # Create a real TradierAdapter instance using the connection object
     adapter = TradierAdapter(connection=tradier_connection)
@@ -191,7 +193,7 @@ def test_tradier_adapter_get_option_chain(session, tradier_connection, mock_trad
         mock_get.return_value.json.return_value = mock_tradier_option_chain_response
         mock_get.return_value.raise_for_status.return_value = None
 
-        option_chain = adapter.get_option_chain("SPY")
+        option_chain = await adapter.get_option_chain("SPY")
         assert isinstance(option_chain, list)
         assert len(option_chain) > 0
         assert option_chain[0]['symbol'] == 'SPY240621C00500000'
@@ -204,7 +206,8 @@ def test_tradier_adapter_get_option_chain(session, tradier_connection, mock_trad
             params={"symbol": "SPY"}
         )
 
-def test_tradier_adapter_place_order(session, tradier_connection, mock_tradier_place_order_response):
+@pytest.mark.asyncio
+async def test_tradier_adapter_place_order(session, tradier_connection, mock_tradier_place_order_response):
     """Test place_order method of TradierAdapter."""
     # Create a real TradierAdapter instance using the connection object
     adapter = TradierAdapter(connection=tradier_connection)
@@ -214,7 +217,7 @@ def test_tradier_adapter_place_order(session, tradier_connection, mock_tradier_p
         mock_post.return_value.json.return_value = mock_tradier_place_order_response
         mock_post.return_value.raise_for_status.return_value = None
 
-        order_details = adapter.place_order("AAPL", 10, "market")
+        order_details = await adapter.place_order("AAPL", 10, "market")
         assert isinstance(order_details, dict)
         assert order_details['status'] == 'ok'
         assert order_details['id'] == 12345
@@ -255,7 +258,8 @@ def test_tradier_adapter_get_positions(session, tradier_connection, mock_tradier
             }
         )
 
-def test_tradier_adapter_get_quotes(session, tradier_connection, mock_tradier_quotes_response):
+@pytest.mark.asyncio
+async def test_tradier_adapter_get_quotes(session, tradier_connection, mock_tradier_quotes_response):
     """Test get_quotes method of TradierAdapter."""
     # Create a real TradierAdapter instance using the connection object
     adapter = TradierAdapter(connection=tradier_connection)
@@ -265,7 +269,7 @@ def test_tradier_adapter_get_quotes(session, tradier_connection, mock_tradier_qu
         mock_get.return_value.json.return_value = mock_tradier_quotes_response
         mock_get.return_value.raise_for_status.return_value = None
 
-        quotes = adapter.get_quotes(["GOOG", "AMZN"])
+        quotes = await adapter.get_quotes(["GOOG", "AMZN"])
         assert isinstance(quotes, dict)
         assert "GOOG" in quotes
         assert "AMZN" in quotes

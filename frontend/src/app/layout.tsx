@@ -30,10 +30,6 @@ export default function RootLayout({
       >
         <AuthProvider>
           {children}
-          {/* Temporary link for Trade History Page */}
-          <a href="/trade-history" style={{ position: 'fixed', bottom: 20, left: 20, background: 'blue', color: 'white', padding: '10px', borderRadius: '5px', zIndex: 1000 }}>
-            Trade History
-          </a>
         </AuthProvider>
       </body>
     </html>
