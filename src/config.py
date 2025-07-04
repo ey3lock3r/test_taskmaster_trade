@@ -83,4 +83,20 @@ class Settings(BaseSettings):
         # Add more complexity checks if desired (e.g., entropy, character types)
         # For simplicity, we'll stick to length for now.
 
+BROKER_CONFIGS = [
+    {
+        "name": "Tradier Sandbox",
+        "base_url": "https://sandbox.tradier.com",
+        "streaming_url": "wss://ws.tradier.com", # New field
+        "is_live_mode": False # Sandbox mode
+    },
+    {
+        "name": "Tradier",
+        "base_url": "https://api.tradier.com",
+        "streaming_url": "wss://ws.tradier.com", # New field
+        "is_live_mode": True # Live mode
+    },
+    # Add other brokers as needed
+]
+
 settings = Settings()

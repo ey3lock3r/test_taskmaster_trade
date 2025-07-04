@@ -14,10 +14,12 @@ import pytest_asyncio # Import pytest_asyncio
 from fastapi import Request # Import Request
 from fastapi.responses import JSONResponse, Response # Import JSONResponse and Response
 from fastapi.testclient import TestClient
+from src.models.session import Session as SessionModel # Explicitly import SessionModel
 from sqlmodel import create_engine, Session, SQLModel
 from src.main import create_app
 from src.database import get_session
 from dotenv import load_dotenv
+import src.models # Import all models to ensure they are registered with SQLModel.metadata
 import asyncio
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter

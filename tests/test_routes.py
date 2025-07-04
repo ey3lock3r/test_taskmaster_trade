@@ -9,7 +9,12 @@ from src.models.brokerage_connection import BrokerageConnection
 from src.models.bot_instance import BotInstance
 from src.models.trade_order import TradeOrder
 from src.models.position import Position
+from src.models.broker import Broker # New import
 import uuid
+
+# Import the main app to test routes
+from src.main import app as fastapi_app
+client = TestClient(fastapi_app)
 
 # Test cases
 @pytest.mark.asyncio
@@ -199,11 +204,112 @@ async def test_get_bot_status_success(client: TestClient, session: Session):
     token = login_response.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
+@pytest.fixture(scope="function")
+def default_broker_for_routes(session):
+    broker = Broker(name="RouteTestBroker", base_url="http://route.com", streaming_url="ws://route.com/stream", is_live_mode=False)
+    session.add(broker)
+    session.commit()
+    session.refresh(broker)
+    return broker
+
+@pytest.fixture(scope="function")
+def authenticated_client_with_broker(client: TestClient, session: Session, default_broker_for_routes: Broker): # Add type hint back
+    user = User(username="testuser_route", email=f"route_{uuid.uuid4()}@example.com", hashed_password="hashedpassword")
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+
+    from src.config import settings # Import settings to get jwt_secret_key
+    access_token = jwt.encode({"sub": user.username, "user_id": str(user.id), "type": "access"}, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    refresh_token = jwt.encode({"sub": user.username, "user_id": str(user.id), "type": "refresh"}, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+    # Create a session entry in the database for the token
+    from src.models.session import Session as DBSession # Import DBSession
+    db_session_entry = DBSession(
+        user_id=user.id,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiration_minutes)
+    )
+    session.add(db_session_entry)
+    session.commit()
+    session.refresh(db_session_entry)
+    
+    client.headers = {"Authorization": f"Bearer {access_token}"}
+    return client, user, default_broker_for_routes # Return the actual broker object
+
+@pytest.mark.asyncio
+async def test_create_brokerage_connection_route(authenticated_client_with_broker):
+    client, user, broker = authenticated_client_with_broker
+    response = client.post(
+        "/api/v1/brokerage_connections/",
+        json={
+            "user_id": user.id,
+            "broker_id": broker.id,
+            "access_token": "routetoken123",
+            "refresh_token": "routerefresh123",
+            "token_expires_at": 1678886400 # Example Unix timestamp
+        }
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["user_id"] == user.id
+    assert data["broker_id"] == broker.id
+    assert data["access_token"] is not None # Should be encrypted bytes, but schema returns string
+    assert data["broker"]["name"] == "RouteTestBroker" # Verify nested broker data
+    assert data["broker"]["base_url"] == "http://route.com"
+
+@pytest.mark.asyncio
+async def test_create_brokerage_connection_with_nonexistent_broker_id(authenticated_client_with_broker):
+    client, user, _ = authenticated_client_with_broker
+    response = client.post(
+        "/api/v1/brokerage_connections/",
+        json={
+            "user_id": user.id,
+            "broker_id": 99999, # Non-existent ID
+            "access_token": "invalidtoken"
+        }
+    )
+    assert response.status_code == 404
+    assert "Broker not found" in response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_get_brokerage_connections_route(authenticated_client_with_broker):
+    client, user, broker = authenticated_client_with_broker
+    # Create a connection first
+    client.post(
+        "/api/v1/brokerage_connections/",
+        json={
+            "user_id": user.id,
+            "broker_id": broker.id,
+            "access_token": "gettoken123"
+        }
+    )
+    response = client.get("/api/v1/brokerage_connections/", headers=client.headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert data[0]["user_id"] == user.id
+    assert data[0]["broker"]["name"] == "RouteTestBroker"
+
+@pytest.mark.asyncio
+async def test_get_bot_status_success(client: TestClient, session: Session, default_broker_for_routes: Broker): # Add type hint back
+    """Test retrieving bot status successfully."""
+    test_email = f"testuser_bot_status_{uuid.uuid4()}@example.com"
+    register_response = client.post("/api/v1/register", json={"username": "testuserbotstatus", "password": "testpass123", "email": test_email})
+    assert register_response.status_code == 201
+    
+    login_response = client.post("/api/v1/token", json={"email": test_email, "password": "testpass123"})
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
     user = session.exec(select(User).where(User.username == "testuserbotstatus")).first()
     brokerage_connection = BrokerageConnection(
         user_id=user.id,
-        brokerage_name="Tradier",
-        api_key="dummy_key",
+        broker_id=default_broker_for_routes.id, # Use broker_id
+        access_token="dummy_key",
         api_secret="dummy_secret"
     )
     session.add(brokerage_connection)
@@ -260,7 +366,7 @@ async def test_get_bot_status_no_bots(client: TestClient, session: Session):
     assert response.json() == []
 
 @pytest.mark.asyncio
-async def test_get_bot_parameters_success(client: TestClient, session: Session):
+async def test_get_bot_parameters_success(client: TestClient, session: Session, default_broker_for_routes: Broker): # Add type hint back
     """Test retrieving bot parameters successfully."""
     # Register a user and log in to get a token
     test_email = f"testuser_bot_{uuid.uuid4()}@example.com"
@@ -276,8 +382,8 @@ async def test_get_bot_parameters_success(client: TestClient, session: Session):
     user = session.exec(select(User).where(User.username == "testuserbot")).first()
     brokerage_connection = BrokerageConnection(
         user_id=user.id,
-        brokerage_name="Tradier",
-        api_key="dummy_key",
+        broker_id=default_broker_for_routes.id, # Use broker_id
+        access_token="dummy_key",
         api_secret="dummy_secret"
     )
     session.add(brokerage_connection)
@@ -318,7 +424,7 @@ async def test_get_bot_parameters_not_found(client: TestClient, session: Session
     assert "Bot instance not found" in response.json()["detail"]
 
 @pytest.mark.asyncio
-async def test_update_bot_parameters_success(client: TestClient, session: Session):
+async def test_update_bot_parameters_success(client: TestClient, session: Session, default_broker_for_routes: Broker): # Add type hint back
     """Test updating bot parameters successfully."""
     test_email = f"testuser_update_{uuid.uuid4()}@example.com"
     register_response = client.post("/api/v1/register", json={"username": "testuserupdate", "password": "testpass123", "email": test_email})
@@ -332,8 +438,8 @@ async def test_update_bot_parameters_success(client: TestClient, session: Sessio
     user = session.exec(select(User).where(User.username == "testuserupdate")).first()
     brokerage_connection = BrokerageConnection(
         user_id=user.id,
-        brokerage_name="Tradier",
-        api_key="dummy_key_update",
+        broker_id=default_broker_for_routes.id, # Use broker_id
+        access_token="dummy_key_update",
         api_secret="dummy_secret_update"
     )
     session.add(brokerage_connection)
@@ -369,7 +475,7 @@ async def test_update_bot_parameters_success(client: TestClient, session: Sessio
     assert updated_bot_instance.parameters == updated_payload["parameters"]
 
 @pytest.mark.asyncio
-async def test_update_bot_parameters_invalid_payload(client: TestClient, session: Session):
+async def test_update_bot_parameters_invalid_payload(client: TestClient, session: Session, default_broker_for_routes: Broker): # Add type hint back
     """Test updating bot parameters with an invalid payload (e.g., missing required fields)."""
     test_email = f"testuser_invalid_payload_{uuid.uuid4()}@example.com"
     register_response = client.post("/api/v1/register", json={"username": "testuserinvalidpayload", "password": "testpass123", "email": test_email})
@@ -383,8 +489,8 @@ async def test_update_bot_parameters_invalid_payload(client: TestClient, session
     user = session.exec(select(User).where(User.username == "testuserinvalidpayload")).first()
     brokerage_connection = BrokerageConnection(
         user_id=user.id,
-        brokerage_name="Tradier",
-        api_key="dummy_key",
+        broker_id=default_broker_for_routes.id, # Use broker_id
+        access_token="dummy_key",
         api_secret="dummy_secret"
     )
     session.add(brokerage_connection)
@@ -411,7 +517,7 @@ async def test_update_bot_parameters_invalid_payload(client: TestClient, session
     assert "Field required" in response.json()["detail"][0]["msg"]
 
 @pytest.mark.asyncio
-async def test_update_bot_parameters_not_found(client: TestClient, session: Session):
+async def test_update_bot_parameters_not_found(client: TestClient, session: Session, default_broker_for_routes: Broker): # Add type hint back
     """Test updating bot parameters for a non-existent bot."""
     test_email = f"testuser_update_notfound_{uuid.uuid4()}@example.com"
     register_response = client.post("/api/v1/register", json={"username": "testuserupdatenotfound", "password": "testpass123", "email": test_email})
@@ -429,11 +535,11 @@ async def test_update_bot_parameters_not_found(client: TestClient, session: Sess
         session.add(user)
         session.commit()
         session.refresh(user)
-
+    
     brokerage_connection = BrokerageConnection(
         user_id=user.id,
-        brokerage_name="Tradier",
-        api_key="dummy_token",
+        broker_id=default_broker_for_routes.id, # Use broker_id
+        access_token="dummy_token",
         api_secret="dummy_secret"
     )
     session.add(brokerage_connection)

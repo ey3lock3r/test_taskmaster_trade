@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta # Import timedelta
 from unittest.mock import MagicMock, patch, AsyncMock # Import AsyncMock
 from sqlmodel import Session
 from src.models.bot_status import BotStatus
 from src.services.bot_service import BotService
 from src.brokerage.interface import BrokerageInterface
 from src.models.brokerage_connection import BrokerageConnection
+from src.models.broker import Broker # Import Broker model
 import threading
 import time
 import asyncio # Import asyncio for running async mocks
@@ -60,17 +61,34 @@ def test_get_bot_status_new():
 
 @patch('threading.Thread')
 @patch('threading.Event')
-def test_start_bot_inactive(mock_event, mock_thread):
+@patch('src.services.bot_service.TradierAdapter') # Patch the TradierAdapter class where BotService imports it
+def test_start_bot_inactive(mock_tradier_adapter, mock_event, mock_thread):
     """Test starting an inactive bot."""
     mock_session = MagicMock(spec=Session)
-    mock_brokerage_adapter = MagicMock(spec=BrokerageInterface)
-    mock_brokerage_adapter.connect.return_value = True
+    # Configure the mock TradierAdapter instance that BotService will create
+    mock_tradier_adapter.return_value.connect.return_value = True
     mock_connection_details = MagicMock(spec=BrokerageConnection)
+    mock_connection_details.broker_id = 1 # Mock broker_id for lookup
+    mock_connection_details.expires_at = datetime.now(timezone.utc) + timedelta(hours=1) # Mock expires_at
+    mock_connection_details.api_key = "mock_api_key"
+    mock_connection_details.api_secret = "mock_api_secret"
+    mock_connection_details.decrypt_access_token.return_value = "mock_access_token" # Ensure access token is present for connect
+
+    mock_broker = MagicMock(spec=Broker)
+    mock_broker.id = 1
+    mock_broker.base_url = "https://mock-tradier-api.com"
+    mock_session.exec.return_value.first.return_value = mock_broker # Mock the broker lookup
 
     existing_status = BotStatus(id=1, bot_instance_id=1, status="inactive", last_check_in=datetime.now(timezone.utc))
-    mock_session.exec.return_value.first.return_value = existing_status
- 
-    service = BotService(mock_session, brokerage_adapter=mock_brokerage_adapter)
+    
+    # Mock the session.exec calls for both Broker and BotStatus
+    # Configure side_effect for mock_session.exec.return_value.first
+    # The first call to .first() (from get_bot_status) should return existing_status
+    # The second call should return mock_broker (for the broker lookup)
+    # Subsequent calls to get_bot_status should return existing_status
+    mock_session.exec.return_value.first.side_effect = [existing_status, mock_broker, existing_status, existing_status, existing_status]
+
+    service = BotService(mock_session) # No need to pass mock_brokerage_adapter here
     result = service.start_bot(1, mock_connection_details)
  
     assert result == {"message": "Bot started successfully."}
@@ -78,55 +96,84 @@ def test_start_bot_inactive(mock_event, mock_thread):
     mock_session.add.assert_called_once_with(existing_status)
     mock_session.commit.assert_called_once()
     mock_session.refresh.assert_called_once_with(existing_status)
-    mock_brokerage_adapter.connect.assert_called_once_with(mock_connection_details)
+    # Assert that the connect method on the *mocked instance* was called
+    mock_tradier_adapter.return_value.connect.assert_called_once()
     mock_event.return_value.clear.assert_called_once()
     mock_thread.assert_called_once_with(target=service._run_trading_loop_in_thread, args=(1,)) # Changed target
     mock_thread.return_value.start.assert_called_once()
 
 @patch('threading.Thread')
 @patch('threading.Event')
-def test_start_bot_active(mock_event, mock_thread):
+@patch('src.services.bot_service.TradierAdapter') # Patch the TradierAdapter class where BotService imports it
+def test_start_bot_active(mock_tradier_adapter, mock_event, mock_thread):
     """Test starting an already active bot."""
     mock_session = MagicMock(spec=Session)
-    mock_brokerage_adapter = MagicMock(spec=BrokerageInterface)
+    # No need to configure mock_tradier_adapter.return_value.connect as it shouldn't be called
     mock_connection_details = MagicMock(spec=BrokerageConnection)
+    mock_connection_details.broker_id = 1 # Mock broker_id for lookup
+    mock_connection_details.expires_at = datetime.now(timezone.utc) + timedelta(hours=1) # Mock expires_at
+    mock_connection_details.api_key = "mock_api_key"
+    mock_connection_details.api_secret = "mock_api_secret"
+    mock_connection_details.decrypt_access_token.return_value = "mock_access_token" # Ensure access token is present for connect
+
+    mock_broker = MagicMock(spec=Broker)
+    mock_broker.id = 1
+    mock_broker.base_url = "https://mock-tradier-api.com"
+    mock_session.exec.return_value.first.return_value = mock_broker # Mock the broker lookup
 
     existing_status = BotStatus(id=1, bot_instance_id=1, status="active", last_check_in=datetime.now(timezone.utc))
-    mock_session.exec.return_value.first.return_value = existing_status
- 
-    service = BotService(mock_session, brokerage_adapter=mock_brokerage_adapter)
+    
+    # Mock the session.exec calls for both Broker and BotStatus
+    mock_session.exec.return_value.first.side_effect = [existing_status, mock_broker, existing_status, existing_status]
+
+    service = BotService(mock_session) # No need to pass mock_brokerage_adapter here
     result = service.start_bot(1, mock_connection_details)
  
     assert result == {"message": "Bot is already running."}
     assert existing_status.status == "active" # Should remain active
     mock_session.add.assert_not_called()
     mock_session.commit.assert_not_called()
-    mock_brokerage_adapter.connect.assert_not_called() # Should not try to connect if already active
+    # Assert that the TradierAdapter class was not instantiated
+    mock_tradier_adapter.assert_not_called()
     mock_event.return_value.clear.assert_not_called()
     mock_thread.return_value.start.assert_not_called()
 
 @patch('threading.Thread')
 @patch('threading.Event')
-def test_start_bot_connection_failure(mock_event, mock_thread):
+@patch('src.services.bot_service.TradierAdapter') # Patch the TradierAdapter class where BotService imports it
+def test_start_bot_connection_failure(mock_tradier_adapter, mock_event, mock_thread):
     """Test starting a bot when brokerage connection fails."""
     mock_session = MagicMock(spec=Session)
-    mock_brokerage_adapter = MagicMock(spec=BrokerageInterface)
-    mock_brokerage_adapter.connect.return_value = False # Simulate connection failure
+    # Configure the mock TradierAdapter instance that BotService will create
+    mock_tradier_adapter.return_value.connect.return_value = False # Simulate connection failure
     mock_connection_details = MagicMock(spec=BrokerageConnection)
+    mock_connection_details.broker_id = 1 # Mock broker_id for lookup
+    mock_connection_details.expires_at = datetime.now(timezone.utc) + timedelta(hours=1) # Mock expires_at
+    mock_connection_details.api_key = "mock_api_key"
+    mock_connection_details.api_secret = "mock_api_secret"
+    mock_connection_details.decrypt_access_token.return_value = "mock_access_token" # Ensure access token is present for connect
+
+    mock_broker = MagicMock(spec=Broker)
+    mock_broker.id = 1
+    mock_broker.base_url = "https://mock-tradier-api.com"
+    mock_session.exec.return_value.first.return_value = mock_broker # Mock the broker lookup
 
     existing_status = BotStatus(id=1, bot_instance_id=1, status="inactive", last_check_in=datetime.now(timezone.utc))
-    mock_session.exec.return_value.first.return_value = existing_status
+    
+    # Mock the session.exec calls for both Broker and BotStatus
+    mock_session.exec.return_value.first.side_effect = [existing_status, mock_broker, existing_status, existing_status]
 
-    service = BotService(mock_session, brokerage_adapter=mock_brokerage_adapter)
+    service = BotService(mock_session) # No need to pass mock_brokerage_adapter here
     result = service.start_bot(1, mock_connection_details)
-
+ 
     assert result == {"message": "Failed to start bot: Could not connect to brokerage.", "status": "error"}
     assert existing_status.status == "error" # Status should be set to error
     assert existing_status.error_message == "Failed to connect to brokerage."
     mock_session.add.assert_called_once_with(existing_status)
     mock_session.commit.assert_called_once()
     mock_session.refresh.assert_called_once_with(existing_status)
-    mock_brokerage_adapter.connect.assert_called_once_with(mock_connection_details)
+    # Assert that the connect method on the *mocked instance* was called
+    mock_tradier_adapter.return_value.connect.assert_called_once()
     mock_event.return_value.clear.assert_not_called()
     mock_thread.return_value.start.assert_not_called()
 

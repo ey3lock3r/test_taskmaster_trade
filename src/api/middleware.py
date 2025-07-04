@@ -23,7 +23,7 @@ class AuthMiddleware:
     ):
         self.app = app
         self.exclude_paths = exclude_paths if exclude_paths is not None else []
-        self.exempt_routes = ["/", "/api/v1/token", "/api/v1/register", "/api/v1/login", "/api/v1/health", "/api/v1/refresh"] + self.exclude_paths
+        self.exempt_routes = ["/", "/api/v1/token", "/api/v1/register", "/api/v1/login", "/api/v1/health", "/api/v1/refresh", "/favicon.ico"] + self.exclude_paths
         self.db_engine = db_engine # Store the engine
         
     async def __call__(self, scope, receive, send):
@@ -33,6 +33,7 @@ class AuthMiddleware:
 
         request = Request(scope)
         print(f"AuthMiddleware: Incoming request to path: {request.url.path}")
+        print(f"AuthMiddleware: Exempt routes: {self.exempt_routes}")
 
         # Allow OPTIONS requests to bypass authentication (CORS preflight)
         if request.method == "OPTIONS":

@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{}"
+self.__REACT_LOADABLE_MANIFEST="{\"app/options-trading-app.tsx -> @/components/sidebar\":{\"id\":\"app/options-trading-app.tsx -> @/components/sidebar\",\"files\":[\"static/chunks/_app-pages-browser_src_components_sidebar_tsx.js\"]}}"

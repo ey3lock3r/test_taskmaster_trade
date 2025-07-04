@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, List
 from src.models.brokerage_connection import BrokerageConnection
+from src.models.broker import Broker # Import Broker model
 
 class BrokerageInterface(ABC):
     """Abstract base class for brokerage adapters."""
 
     @abstractmethod
-    def connect(self, connection: BrokerageConnection) -> bool:
+    def connect(self) -> bool:
         """Establish connection to the brokerage."""
         pass
 

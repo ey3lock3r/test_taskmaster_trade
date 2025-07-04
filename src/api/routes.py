@@ -23,7 +23,9 @@ from src.models.bot_instance import BotInstance
 from src.models.bot_status import BotStatus
 from src.models.trade_order import TradeOrder
 from src.models.position import Position
+from src.models.broker import Broker # Import Broker model
 from src.services.bot_service import BotService
+from src.services.broker_service import BrokerService # New import
 from src.utils.security import get_current_user
 from src.schemas import UserCreate, UserResponse, Token, LoginRequest, BrokerageConnectionCreate, BrokerageConnectionResponse, BotInstanceCreate, BotInstanceResponse, BotStatusResponse, TradeOrderResponse, PositionResponse
 from fastapi.security import OAuth2PasswordBearer # Removed unused OAuth2PasswordRequestForm, HTTPBearer
@@ -341,7 +343,7 @@ def terminate_user_session(
     
     return {"message": f"Session {session_id} terminated successfully"}
 
-@router.post("/brokerage_connections/", response_model=BrokerageConnectionResponse, status_code=HTTP_201_CREATED)
+@router.post("/brokerage_connections", response_model=BrokerageConnectionResponse, status_code=HTTP_201_CREATED)
 def create_brokerage_connection(
     connection: BrokerageConnectionCreate,
     current_user: User = Depends(get_current_user),
@@ -357,22 +359,140 @@ def create_brokerage_connection(
 
     Returns:
         BrokerageConnectionResponse: The created brokerage connection.
+
+    Raises:
+        HTTPException: If the specified broker_id does not exist.
     """
     logger.info(f"Attempting to create brokerage connection for user: {current_user.username}")
+
+    # Verify that the broker_id exists
+    broker_service = BrokerService(session)
+    broker = broker_service.get_broker_by_id(connection.broker_id) # Use get_broker_by_id
+    if not broker:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Broker not found"
+        )
+
     db_connection = BrokerageConnection(
         user_id=current_user.id,
-        brokerage_name=connection.brokerage_name,
+        broker_id=connection.broker_id,
         api_key=connection.api_key,
         api_secret=connection.api_secret,
-        account_id=connection.account_id
+        access_token=connection.access_token,
+        refresh_token=connection.refresh_token,
+        expires_at=datetime.fromtimestamp(connection.token_expires_at, tz=timezone.utc) if connection.token_expires_at else None
     )
     session.add(db_connection)
     session.commit()
     session.refresh(db_connection)
-    logger.info(f"Brokerage connection '{connection.brokerage_name}' created for user {current_user.username}.")
+    logger.info(f"Brokerage connection for broker ID '{connection.broker_id}' created for user {current_user.username}.")
     return db_connection
 
-@router.get("/brokerage_connections/", response_model=List[BrokerageConnectionResponse])
+@router.post("/brokerage_connections/test", status_code=status.HTTP_200_OK)
+def test_brokerage_connection(
+    connection_data: BrokerageConnectionCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Tests a brokerage connection without persisting it to the database.
+    TODO Implement broker connection test
+
+    Args:
+        connection_data (BrokerageConnectionCreate): The brokerage connection data to test.
+        current_user (User, optional): The authenticated user. Defaults to Depends(get_current_user).
+        session (Session, optional): Database session. Defaults to Depends(get_session).
+
+    Returns:
+        dict: A confirmation message if the test is successful.
+
+    Raises:
+        HTTPException: If the connection test fails or broker is not found.
+    """
+    logger.info(f"Attempting to test brokerage connection for user: {current_user.username}")
+
+    broker_service = BrokerService(session)
+    broker = broker_service.get_broker_by_id(connection_data.broker_id)
+    if not broker:
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Broker not found"
+        )
+
+    # Here you would integrate with the actual broker's API to test the credentials.
+    # For now, we'll simulate a successful test.
+    # In a real scenario, this would involve calling a method on broker_service
+    # that attempts to authenticate with the broker using the provided credentials.
+    try:
+        # Example: broker_service.test_connection(broker, connection_data.api_key, connection_data.api_secret)
+        logger.info(f"Simulating successful connection test for broker ID '{connection_data.broker_id}'.")
+        return {"message": "Connection test successful!"}
+    except Exception as e:
+        logger.error(f"Connection test failed for broker ID '{connection_data.broker_id}': {e}")
+        raise HTTPException(
+            status_code=HTTP_400_BAD_REQUEST,
+            detail=f"Connection test failed: {e}"
+        )
+
+@router.delete("/brokerage_connections/{connection_id}", status_code=status.HTTP_200_OK)
+def delete_brokerage_connection(
+    connection_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Deletes a brokerage connection for the current user.
+
+    Args:
+        connection_id (int): The ID of the brokerage connection to delete.
+        current_user (User, optional): The authenticated user. Defaults to Depends(get_current_user).
+        session (Session, optional): Database session. Defaults to Depends(get_session).
+
+    Returns:
+        dict: A confirmation message.
+
+    Raises:
+        HTTPException: If the connection is not found or not authorized for the current user.
+    """
+    logger.info(f"Attempting to delete brokerage connection ID '{connection_id}' for user: {current_user.username}")
+
+    db_connection = session.exec(select(BrokerageConnection).where(
+        BrokerageConnection.id == connection_id,
+        BrokerageConnection.user_id == current_user.id
+    )).first()
+
+    if not db_connection:
+        logger.warning(f"Brokerage connection deletion failed for ID '{connection_id}': Not found or unauthorized.")
+        raise HTTPException(
+            status_code=HTTP_404_NOT_FOUND,
+            detail="Brokerage connection not found or unauthorized"
+        )
+
+    session.delete(db_connection)
+    session.commit()
+    logger.info(f"Brokerage connection ID '{connection_id}' deleted successfully for user: {current_user.username}")
+    return {"message": f"Brokerage connection {connection_id} deleted successfully"}
+
+
+@router.get("/brokers", response_model=List[Broker])
+def get_all_brokers_route(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Retrieves all available brokers from the database.
+
+    Args:
+        session (Session, optional): Database session. Defaults to Depends(get_session).
+
+    Returns:
+        List[Broker]: A list of all available brokers.
+    """
+    broker_service = BrokerService(session)
+    return broker_service.get_all_brokers()
+
+@router.get("/brokerage_connections", response_model=List[BrokerageConnectionResponse])
 def get_brokerage_connections(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)

@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Kill any existing processes on ports 8000 and 3000
+# Kill any existing processes on ports 8000 and 3000 and 6379
 echo "Attempting to kill processes on ports 8000 and 3000..."
 fuser -k 8000/tcp || true
 fuser -k 3000/tcp || true
+fuser -k 6379/tcp || true
 sleep 2 # Give processes a moment to terminate
 
 # Clean up the database directly

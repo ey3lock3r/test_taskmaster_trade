@@ -20,3 +20,12 @@ COULD_NOT_VALIDATE_REFRESH_TOKEN = "Could not validate refresh token"
 ACTIVE_SESSION_NOT_FOUND = "Active session not found"
 SESSION_NOT_FOUND_OR_UNAUTHORIZED = "Session not found or not authorized"
 BOT_INSTANCE_NOT_FOUND = "Bot instance not found"
+
+# Brokerage Connection Statuses
+CONNECTION_STATUS_CONNECTED = "connected"
+CONNECTION_STATUS_DISCONNECTED = "disconnected"
+CONNECTION_STATUS_ERROR = "error"
+CONNECTION_STATUS_PENDING = "pending"
+CONNECTION_STATUS_TESTING = "testing"
+CONNECTION_STATUS_INVALID_CREDENTIALS = "invalid_credentials"
+CONNECTION_STATUS_BROKER_UNAVAILABLE = "broker_unavailable"

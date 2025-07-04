@@ -3,6 +3,7 @@ from src.models.bot_status import BotStatus
 from src.brokerage.interface import BrokerageInterface
 from src.brokerage.tradier_adapter import TradierAdapter
 from src.models.brokerage_connection import BrokerageConnection
+from src.models.broker import Broker # Import Broker model
 from src.strategies.pmcc import PMCCStrategy
 from src.models.trade_order import TradeOrder # Import TradeOrder model
 from src.models.position import Position # Import Position model
@@ -14,8 +15,9 @@ import asyncio # Import asyncio
 class BotService:
     def __init__(self, session: Session, brokerage_adapter: BrokerageInterface = None, strategy: PMCCStrategy = None):
         self.session = session
-        self.brokerage_adapter = brokerage_adapter if brokerage_adapter else TradierAdapter()
-        self.strategy = strategy if strategy else PMCCStrategy(brokerage=self.brokerage_adapter) # Pass brokerage adapter to strategy
+        # The brokerage_adapter will be initialized in start_bot based on connection_details
+        self.brokerage_adapter = brokerage_adapter
+        self.strategy = strategy # Strategy will be initialized in start_bot
         self._trading_thread = None
         self._stop_trading_event = threading.Event()
 
@@ -37,8 +39,18 @@ class BotService:
         if status_record.status == "active":
             return {"message": "Bot is already running."}
         
+        # Retrieve the Broker object using the broker_id from connection_details
+        broker = self.session.exec(select(Broker).where(Broker.id == connection_details.broker_id)).first()
+        if not broker:
+            self.handle_bot_error(bot_instance_id, f"Broker with ID {connection_details.broker_id} not found.")
+            return {"message": "Failed to start bot: Broker not found.", "status": "error"}
+
+        # Initialize TradierAdapter with both broker and connection
+        self.brokerage_adapter = TradierAdapter(broker=broker, connection=connection_details)
+        self.strategy = PMCCStrategy(brokerage=self.brokerage_adapter)
+
         # Connect to brokerage
-        if not self.brokerage_adapter.connect(connection_details):
+        if not self.brokerage_adapter.connect(): # connect method no longer needs connection_details
             self.handle_bot_error(bot_instance_id, "Failed to connect to brokerage.")
             return {"message": "Failed to start bot: Could not connect to brokerage.", "status": "error"}
 

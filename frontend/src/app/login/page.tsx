@@ -49,9 +49,10 @@ export default function LoginPage() {
     } catch (err: any) {
       if (err instanceof Error) {
         setError(err.message || "An unexpected error occurred.");
-        console.error("Login error:", err.message); // Add console log for debugging
+        console.error("Login error:", err); // Log the full error object
       } else {
         setError("An unexpected error occurred.");
+        console.error("Login error:", err); // Log the full error object for non-Error types
       }
     } finally {
       setIsLoading(false);

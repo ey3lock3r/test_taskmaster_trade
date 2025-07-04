@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.model.base import BaseModel as Base
-from src.models import User, Session, BrokerageConnection, BotInstance, StrategyDefinition, StrategyParameter, TradeOrder, Position
+from src.models import User, Session, BrokerageConnection, BotInstance, StrategyDefinition, StrategyParameter, TradeOrder, Position, Broker # Import Broker
 from src.config import settings
 from datetime import datetime, timedelta, timezone
 from src.utils.encryption import generate_key # Import generate_key
@@ -70,21 +70,36 @@ def test_brokerage_connection_creation(db_session):
     user = User(username="brokeruser", hashed_password="hp")
     db_session.add(user)
     db_session.commit()
+    db_session.refresh(user) # Refresh user to get its ID
+
+    broker = Broker(name="TestBrokerConn", base_url="http://testconn.com", streaming_url="ws://testconn.com/stream", is_live_mode=False)
+    db_session.add(broker)
+    db_session.commit()
+    db_session.refresh(broker) # Refresh broker to get its ID
+
     # Generate a valid Fernet key for testing
     test_encryption_key = generate_key()
     # Temporarily override the settings.encryption_key for this test
     original_encryption_key = settings.encryption_key
     settings.encryption_key = test_encryption_key
 
-    conn = BrokerageConnection(user_id=user.id, brokerage_name="Tradier", api_key="test_api_key", api_secret="test_api_secret")
+    conn = BrokerageConnection(
+        user_id=user.id,
+        broker_id=broker.id, # New required argument
+        access_token="test_access_token",
+        refresh_token="test_refresh_token",
+        token_expires_at=int(datetime.now(timezone.utc).timestamp() + 3600) # Example timestamp
+    )
     db_session.add(conn)
     db_session.commit()
+    db_session.refresh(conn)
 
     # Assert that the tokens are encrypted (i.e., they are bytes and not the original string)
-    assert isinstance(conn.api_key, bytes)
-    assert isinstance(conn.api_secret, bytes)
-    assert conn.decrypt_api_key() == "test_api_key"
-    assert conn.decrypt_api_secret() == "test_api_secret"
+    assert isinstance(conn.access_token, bytes)
+    assert isinstance(conn.refresh_token, bytes)
+    assert conn.decrypt_access_token() == "test_access_token"
+    assert conn.decrypt_refresh_token() == "test_refresh_token"
+    assert conn.broker_id == broker.id
 
     # Restore the original encryption key
     settings.encryption_key = original_encryption_key
@@ -92,6 +107,7 @@ def test_brokerage_connection_creation(db_session):
     db_session.commit()
     assert conn.id is not None
     assert conn.user.username == "brokeruser"
+    assert conn.broker.name == "TestBrokerConn" # Verify relationship
 
 def test_bot_instance_creation(db_session):
     user = User(username="botuser", hashed_password="hp")
@@ -104,13 +120,23 @@ def test_bot_instance_creation(db_session):
     db_session.commit()
     db_session.refresh(strategy)
 
+    broker = Broker(name="TestBrokerBot", base_url="http://testbot.com", streaming_url="ws://testbot.com/stream", is_live_mode=False)
+    db_session.add(broker)
+    db_session.commit()
+    db_session.refresh(broker)
+
     # Generate a valid Fernet key for testing
     test_encryption_key = generate_key()
     # Temporarily override the settings.encryption_key for this test
     original_encryption_key = settings.encryption_key
     settings.encryption_key = test_encryption_key
 
-    conn = BrokerageConnection(user_id=user.id, brokerage_name="Tradier", api_key="test_api_key", api_secret="test_api_secret")
+    conn = BrokerageConnection(
+        user_id=user.id,
+        broker_id=broker.id, # New required argument
+        access_token="test_api_key_bot",
+        api_secret="test_api_secret_bot"
+    )
     db_session.add(conn)
     db_session.commit()
     db_session.refresh(conn)
@@ -124,7 +150,7 @@ def test_bot_instance_creation(db_session):
     db_session.refresh(bot)
     assert bot.id is not None
     assert bot.user.username == "botuser"
-    assert bot.brokerage_connection.brokerage_name == "Tradier"
+    assert bot.brokerage_connection.broker.name == "TestBrokerBot" # Verify relationship
     assert bot.strategy.name == "TestStrategy"
 
 def test_strategy_definition_creation(db_session):
@@ -187,13 +213,23 @@ def test_trade_order_creation(db_session):
     db_session.commit()
     db_session.refresh(strategy)
 
+    broker = Broker(name="TestBrokerOrder", base_url="http://testorder.com", streaming_url="ws://testorder.com/stream", is_live_mode=False)
+    db_session.add(broker)
+    db_session.commit()
+    db_session.refresh(broker)
+
     # Generate a valid Fernet key for testing
     test_encryption_key = generate_key()
     # Temporarily override the settings.encryption_key for this test
     original_encryption_key = settings.encryption_key
     settings.encryption_key = test_encryption_key
 
-    conn = BrokerageConnection(user_id=user.id, brokerage_name="Tradier", api_key="test_api_key", api_secret="test_api_secret")
+    conn = BrokerageConnection(
+        user_id=user.id,
+        broker_id=broker.id, # New required argument
+        access_token="test_api_key_order",
+        api_secret="test_api_secret_order"
+    )
     db_session.add(conn)
     db_session.commit()
     db_session.refresh(conn)
@@ -224,13 +260,23 @@ def test_position_creation(db_session):
     db_session.commit()
     db_session.refresh(strategy)
 
+    broker = Broker(name="TestBrokerPosition", base_url="http://testposition.com", streaming_url="ws://testposition.com/stream", is_live_mode=False)
+    db_session.add(broker)
+    db_session.commit()
+    db_session.refresh(broker)
+
     # Generate a valid Fernet key for testing
     test_encryption_key = generate_key()
     # Temporarily override the settings.encryption_key for this test
     original_encryption_key = settings.encryption_key
     settings.encryption_key = test_encryption_key
 
-    conn = BrokerageConnection(user_id=user.id, brokerage_name="Tradier", api_key="test_api_key", api_secret="test_api_secret")
+    conn = BrokerageConnection(
+        user_id=user.id,
+        broker_id=broker.id, # New required argument
+        access_token="test_api_key_position",
+        api_secret="test_api_secret_position"
+    )
     db_session.add(conn)
     db_session.commit()
     db_session.refresh(conn)

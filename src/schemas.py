@@ -1,6 +1,6 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Field, Relationship
 
 from pydantic import EmailStr, field_validator, ConfigDict
 
@@ -53,18 +53,40 @@ class LoginRequest(SQLModel):
             raise ValueError('Either username or email must be provided')
         return self
 
+class BrokerBase(SQLModel):
+    name: str
+    base_url: str
+    streaming_url: str # New field
+    is_live_mode: bool
+
+class BrokerCreate(BrokerBase):
+    pass
+
+class Broker(BrokerBase):
+    id: int
+    # connections: List["BrokerageConnection"] = Relationship(back_populates="broker") # This creates a circular dependency in Pydantic, so we omit it here for the response model
+    model_config = ConfigDict(from_attributes=True) # Use model_config instead of class Config
+
 class BrokerageConnectionCreate(SQLModel):
-    brokerage_name: str
-    api_key: str
-    api_secret: Optional[str] = None
-    account_id: Optional[str] = None
+    broker_id: int # Now references the Broker ID
+    api_key: Optional[str] = None # New field for API Key
+    api_secret: Optional[str] = None # New field for API Secret
+    access_token: Optional[str] = None # Made optional as API Key/Secret might be used
+    refresh_token: Optional[str] = None
+    token_expires_at: Optional[int] = None # Unix timestamp
 
 class BrokerageConnectionResponse(SQLModel):
     id: int
     user_id: int
-    brokerage_name: str
-    account_id: Optional[str] = None
+    broker_id: int
+    api_key: Optional[str] = None # Include API Key in response
+    api_secret: Optional[str] = None # Include API Secret in response
+    access_token: Optional[str] = None # For response, we might still show it (encrypted in DB)
+    refresh_token: Optional[str] = None
+    expires_at: Optional[datetime] = None # Change to datetime
     is_active: bool
+    broker: Broker # Include the nested Broker model
+    model_config = ConfigDict(from_attributes=True) # Use model_config instead of class Config
 
 class BotInstanceCreate(SQLModel):
     strategy_id: int

@@ -326,9 +326,9 @@ def test_terminate_session(test_user, valid_token, session, client): # Renamed c
     # Expire all objects in the session to force a reload from the database
     session.expire_all()
 
-    # Import the main app here to create a new client instance
-    from src.main import app as main_app
-    new_client = TestClient(main_app)
+    # Import create_app to create a new client instance with the test database
+    from src.main import create_app
+    new_client = TestClient(create_app(db_engine=session.bind))
     
     # Verify token no longer works with the new client instance
     response = new_client.get(

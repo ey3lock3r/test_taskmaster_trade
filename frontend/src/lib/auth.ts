@@ -18,7 +18,7 @@ export async function loginUser(email: string, password: string) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login error:", error); // Log the full error object
     throw error;
   }
 }
@@ -41,7 +41,7 @@ export async function signupUser(username: string, email: string, password: stri
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error("Signup error:", error);
+    console.error("Signup error:", error); // Log the full error object
     throw error;
   }
 }

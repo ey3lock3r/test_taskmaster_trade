@@ -17,7 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Attempt to load token from localStorage on initial load
-    const storedToken = localStorage.getItem("authToken");
+    const storedToken = localStorage.getItem("access_token");
     if (storedToken) {
       setToken(storedToken);
     }
@@ -25,13 +25,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = (newToken: string) => {
     setToken(newToken);
-    localStorage.setItem("authToken", newToken);
-    router.push("/dashboard"); // Redirect to dashboard page after login
+    localStorage.setItem("access_token", newToken);
+    router.push("/"); // Redirect to root page after login
   };
 
   const logout = () => {
     setToken(null);
-    localStorage.removeItem("authToken");
+    localStorage.removeItem("access_token");
     router.push("/login"); // Redirect to login page after logout
   };
 

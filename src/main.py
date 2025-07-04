@@ -9,6 +9,7 @@ from .api.middleware import AuthMiddleware
 from src.database import create_db_and_tables, get_session, engine
 from src.models.bot_instance import BotInstance
 from src.services.bot_service import BotService
+from src.services.broker_service import BrokerService # New import
 from sqlmodel import SQLModel, Session # Import Session
 from src.config import settings
 from fastapi_limiter import FastAPILimiter # Import FastAPILimiter
@@ -45,9 +46,11 @@ def create_app(db_engine=None):
         global tradier_ws_client # Declare global for WebSocket client
 
         if not db_engine: # Only create tables if a specific engine is not provided (i.e., not in a test environment)
-            logger.info("Creating tables on application startup...")
-            create_db_and_tables()
-            logger.info("Tables created.")
+            # Tables are now managed by Alembic migrations, so no need to call create_db_and_tables() here.
+            # logger.info("Creating tables on application startup...")
+            # create_db_and_tables()
+            # logger.info("Tables created.")
+            logger.info("Database schema managed by Alembic. Skipping create_db_and_tables().")
         else:
             logger.info("Skipping table creation on application startup (test environment detected).")
         
@@ -65,12 +68,22 @@ def create_app(db_engine=None):
             # but as a fallback, log a critical error if client is still None.
             logger.critical("Redis client is None after initialization. FastAPILimiter not initialized. Rate limiting will not be active.")
         
-        # Initialize and connect to Tradier WebSocket
+        # Initialize brokers
         with Session(db_engine or engine) as session:
+            broker_service = BrokerService(session)
+            broker_service.initialize_brokers()
+            logger.info("Brokers initialized successfully.")
+
+        # Initialize and connect to Tradier WebSocket
+        with Session(db_engine or engine) as session: # This session is for Tradier WebSocket, not broker initialization
             # For simplicity, get the first brokerage connection. In a real app, this would be user-specific.
             connection = session.query(BrokerageConnection).first()
-            if connection and connection.access_token:
-                tradier_ws_client = TradierWebSocketClient(connection.decrypt_access_token())
+            if connection and connection.access_token and connection.broker:
+                # Pass the streaming_url from the associated Broker model
+                tradier_ws_client = TradierWebSocketClient(
+                    access_token=connection.decrypt_access_token(),
+                    websocket_url=connection.broker.streaming_url # Use streaming_url from Broker
+                )
                 await tradier_ws_client.connect()
                 if tradier_ws_client.is_connected:
                     # Subscribe to quotes and options for a few symbols
@@ -82,7 +95,7 @@ def create_app(db_engine=None):
                 else:
                     logger.warning("Tradier WebSocket client failed to connect.")
             else:
-                logger.warning("No brokerage connection found or access token missing for Tradier WebSocket.")
+                logger.warning("No brokerage connection found, access token missing, or broker not associated for Tradier WebSocket.")
             
         logger.info("Application lifespan context entered.")
         yield
@@ -111,7 +124,7 @@ def create_app(db_engine=None):
         allow_methods=["*"],  # Allows all methods
         allow_headers=["*"],  # Allows all headers
     )
-    app.add_middleware(AuthMiddleware, exclude_paths=["/api/v1/token", "/api/v1/register"], db_engine=db_engine or engine)
+    app.add_middleware(AuthMiddleware, exclude_paths=["/api/v1/token", "/api/v1/register", "/api/v1/test"], db_engine=db_engine or engine)
     
     # Initialize FastAPI-Limiter within the lifespan context
     # The @app.on_event("startup") decorator is deprecated in favor of lifespan
